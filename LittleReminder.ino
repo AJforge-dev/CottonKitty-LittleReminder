@@ -1,24 +1,41 @@
 /*
- * Little Reminder - ESP32-C3 SuperMini + 0.96\" OLED (SSD1306)
+ * =========================================================================
+ * 🐾 CottonKitty / Little Reminder - ESP32-C3 SuperMini + SSD1306 OLED 🐾
+ * =========================================================================
  *
- * FEATURES (Option B):
- * - 10 Vector & Bitmap Faces & Animations (Puppy, Fox, Kitty, Panda, Hamster, Bunny, etc.)
- * - Face-Specific Touch Reactions
- * - Double-Tap Touch Gesture (Heart Burst!)
- * - Long-Press Touch Gesture (Snooze / Purr Zzz)
- * - Auto-Sleep Battery Saver (with instant wake on touch/button)
- * - On-Screen OLED Menu with Settings:
- *     * Toggle Auto-Sleep [ON/OFF]
- *     * Toggle Wi-Fi Hotspot [ON/OFF] (Save 80mA battery!)
- *     * Toggle Double-Tap [ON/OFF]
- * - Wi-Fi AP Hotspot on demand (http://192.168.4.1)
+ * HARDWARE PIN CONFIGURATION (Locked):
+ * - OLED I2C SDA:  GPIO 5
+ * - OLED I2C SCL:  GPIO 6 (0x3C, 128x64)
+ * - TOUCH SENSOR:  GPIO 3 (Active HIGH, digital touch module OUT)
+ * - BUTTON 1:      GPIO 9 (Next Mode / Menu Down - Active LOW with INPUT_PULLUP)
+ * - BUTTON 2:      GPIO 1 (Open Menu / Select    - Active LOW with INPUT_PULLUP)
  *
- * WIRING:
- * OLED VCC/GND -> 3V3/GND | SDA -> GPIO 5 | SCL -> GPIO 6
- * Touch Sensor -> VCC/GND -> 3V3/GND | OUT -> GPIO 3
- * Button 1 (Next Face / Menu Down)   -> GPIO 9 to GND
- * Button 2 (Menu Open / Select)       -> GPIO 1 to GND
- * Battery 3.7V -> TP4056 -> Slide Switch -> SuperMini 5V
+ * FEATURES:
+ * 1. 8 Original Gallery Drawings & Multi-Frame Animations from CottonKitty:
+ *    - Walking Cat (28 frames)
+ *    - Heart-Eyes Face (28 frames)
+ *    - Dove with Flower (1 frame)
+ *    - Sad Face (10 frames)
+ *    - Cat & Mouse Cuddle (1 frame)
+ *    - Girl with Umbrella (1 frame)
+ *    - Couple High-Five (1 frame)
+ *    - Girl Portrait (1 frame)
+ * 2. 32 Procedural Expressive Kaomoji Faces with blinking, dancing & reactions
+ * 3. On-Screen OLED Menu System (Navigated via BTN1 and BTN2):
+ *    - Gallery Drawings Sub-Menu
+ *    - Cute Expressions Sub-Menu
+ *    - Preset Messages Sub-Menu
+ *    - Settings & Power (Auto-Sleep, Wi-Fi toggle, Double-Tap toggle)
+ * 4. Interactive Touch Sensor Gestures:
+ *    - Single Tap: Love Heart Reaction
+ *    - Double Tap: Animated Heart Explosion Burst!
+ *    - Long Press (>1.5s): Snooze / Sleepy Zzz mode
+ * 5. Auto-Sleep Battery Saver: Turns OLED display off after 45s of inactivity.
+ *    Instant wake on touch or button press!
+ * 6. Dual Control:
+ *    - USB-C OTG Serial (Web Serial direct cable connection)
+ *    - Wi-Fi Web Server (STA connect to 'ESP' with AP fallback 'CottonKitty')
+ * =========================================================================
  */
 
 #include <Wire.h>
@@ -26,15 +43,16 @@
 #include <Adafruit_SSD1306.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include "GalleryBitmaps.h"
 
 // ==========================================
-// 📌 PIN CONFIGURATION (Change if needed)
+// 📌 PIN DEFINITIONS
 // ==========================================
-#define OLED_SDA       5   // Set to 5 (or 8 for standard I2C)
-#define OLED_SCL       6   // Set to 6 (or 9 for standard I2C)
-#define TOUCH_PIN      3   // Touch sensor OUT (Active HIGH)
-#define BTN1_PIN       9   // Button 1: Next Face / Menu Down (Active LOW)
-#define BTN2_PIN       1   // Button 2: Open Menu / Select (Active LOW)
+#define OLED_SDA       5
+#define OLED_SCL       6
+#define TOUCH_PIN      3
+#define BTN1_PIN       9   // Next Mode / Menu Down
+#define BTN2_PIN       1   // Menu Open / Select
 
 #define SCREEN_WIDTH   128
 #define SCREEN_HEIGHT  64
@@ -42,401 +60,628 @@
 #define OLED_ADDR      0x3C
 
 // ==========================================
-// 📶 WI-FI NETWORK CONFIGURATION
+// 📶 WI-FI CREDENTIALS
 // ==========================================
-// 1. Device Hotspot (Default)
-#define AP_SSID        "LittleReminder"
-#define AP_PASS        "love1234"
-
-// 2. Or connect to your Home Wi-Fi / Phone Hotspot:
-// (Put your Wi-Fi name & password here if you want it to join your home network.
-//  Leave empty "" to use the LittleReminder hotspot!)
 const char* HOME_WIFI_SSID = "ESP";
 const char* HOME_WIFI_PASS = "Ajay@esp";
-
-String wifiIP = "192.168.4.1";
+const char* AP_SSID        = "CottonKitty";
+const char* AP_PASS        = "kittyfriend";
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 WebServer server(80);
 
 // ==========================================
-// ⚙️ SETTINGS & STATE
+// 🐾 MODES & EXPRESSIONS
 // ==========================================
-bool autoSleepEnabled = true;
-uint32_t sleepTimeoutMs = 45000;  // 45 seconds idle -> sleep
-bool wifiEnabled = true;          // ✅ AUTO-START WI-FI ON BOOT!
-bool doubleTapEnabled = true;
-
-bool isSleeping = false;
-uint32_t lastActivityMillis = 0;
-
-enum DisplayMode {
-  MODE_FACE,
-  MODE_REACTION,
-  MODE_DOUBLE_TAP,
-  MODE_MENU,
-  MODE_MESSAGE
+const char* ALL_MODES[] = {
+  "happy", "love", "shy", "sleep", "laugh", "cry", "angry", "surprise",
+  "wink", "cool", "sad", "blush", "excited", "dance", "thinking", "confused",
+  "ghost", "bunny", "star", "heart", "sleepy", "proud", "oops", "relaxed",
+  "sparkle", "tiny", "robot", "kiss", "pout", "party", "floating", "calm",
+  "gallery_catwalk", "gallery_heartface", "gallery_dove", "gallery_sadface",
+  "gallery_catmouse", "gallery_rainygirl", "gallery_couple", "gallery_girlportrait"
 };
+const uint8_t TOTAL_MODES = 40;
 
-DisplayMode currentMode = MODE_FACE;
-uint8_t currentFaceIndex = 0;
-const uint8_t TOTAL_FACES = 10;
-const char* const FACE_NAMES[TOTAL_FACES] = {
-  "Puppy", "Cozy Fox", "Kitty", "Panda", "Hamster",
-  "Bunny", "Happy", "Wink", "Loving", "Sleepy"
+String currentMode = "happy";
+String currentMessage = "You matter.";
+uint8_t modeIdx = 0;
+uint8_t frameIdx = 0;
+uint8_t greetingIdx = 0;
+unsigned long lastFrame = 0;
+String wifiIP = "192.168.4.1";
+
+const char* GREETINGS[] = {
+  "You matter.",
+  "You make me smile.",
+  "A little hug for you.",
+  "You are appreciated.",
+  "Keep shining."
 };
+const uint8_t TOTAL_GREETINGS = 5;
 
-uint8_t customBitmap[1024];
-bool hasCustomBitmap = false;
-
-// Touch gesture state
-uint32_t touchDownTime = 0;
-uint32_t lastTapReleaseTime = 0;
-bool touchWasPressed = false;
-uint8_t tapCount = 0;
-
-// Reaction animation state
-uint32_t reactionStartMillis = 0;
-uint32_t reactionDurationMs = 2600;
-uint32_t animTick = 0;
-uint32_t lastAnimTickMillis = 0;
-
-// Menu system state
-enum MenuLevel {
+// ==========================================
+// 📋 MENU DEFINITIONS
+// ==========================================
+enum MenuState {
+  STATE_NORMAL = 0,
   MENU_MAIN,
-  MENU_PETS,
-  MENU_EXPR,
+  MENU_GALLERY,
+  MENU_EXPRESSIONS,
   MENU_MESSAGES,
   MENU_SETTINGS
 };
 
-MenuLevel currentMenuLevel = MENU_MAIN;
+MenuState currentMenuState = STATE_NORMAL;
 int8_t menuCursor = 0;
 int8_t menuScroll = 0;
 
-// Current custom message
-String currentMessageText = "You are doing amazing! <3";
+// ==========================================
+// ⚙️ SETTINGS & POWER MANAGEMENT
+// ==========================================
+bool autoSleepEnabled = true;
+bool wifiEnabled      = true;
+bool doubleTapEnabled = true;
 
-// Forward declarations
+bool isSleeping       = false;
+unsigned long lastActivityTime = 0;
+const unsigned long AUTO_SLEEP_TIMEOUT = 45000; // 45 seconds
+
+// ==========================================
+// 💖 TOUCH & REACTION STATE
+// ==========================================
+enum ReactionType {
+  REACTION_NONE = 0,
+  REACTION_LOVE,
+  REACTION_BURST,
+  REACTION_SNOOZE
+};
+
+ReactionType currentReaction = REACTION_NONE;
+unsigned long reactionStartTime = 0;
+const unsigned long REACTION_DURATION = 2000;
+
+// Double tap detection
+unsigned long lastTouchReleaseTime = 0;
+unsigned long touchPressStartTime  = 0;
+bool touchWasPressed = false;
+
+// Button debounce tracking
+bool btn1LastState = HIGH;
+bool btn2LastState = HIGH;
+unsigned long btn1LastDebounceTime = 0;
+unsigned long btn2LastDebounceTime = 0;
+const unsigned long DEBOUNCE_DELAY = 40;
+
+// Forward Declarations
+void renderMenu();
+void drawMode();
+void handleTouch();
+void handleButtons();
+void handleSerial();
 void wakeUp();
 void goToSleep();
-void showFace(uint8_t index);
-void triggerReaction(bool isDoubleTap = false);
-void renderCurrent();
-void renderMenu();
-void handleTouchGestures();
-void handleButtons();
-void updateWiFiState();
+void setupWiFi();
 
 // ==========================================
-// 🎨 DRAWING HELPERS
+// 🌐 WEB APPLICATION HTML (Stored in Flash)
 // ==========================================
-void drawHeart(int16_t x, int16_t y, int16_t size, bool fill = true) {
-  int16_t r = size / 4;
-  if (r < 1) r = 1;
-  if (fill) {
-    display.fillCircle(x - r, y, r, SSD1306_WHITE);
-    display.fillCircle(x + r, y, r, SSD1306_WHITE);
-    display.fillTriangle(x - 2 * r, y, x + 2 * r, y, x, y + 2 * r + 1, SSD1306_WHITE);
-  } else {
-    display.drawCircle(x - r, y, r, SSD1306_WHITE);
-    display.drawCircle(x + r, y, r, SSD1306_WHITE);
-    display.drawLine(x - 2 * r, y, x, y + 2 * r + 1, SSD1306_WHITE);
-    display.drawLine(x + 2 * r, y, x, y + 2 * r + 1, SSD1306_WHITE);
+const char APP_HTML[] PROGMEM = R"rawliteral(<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CottonKitty & Little Reminder</title>
+<style>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#252632;background:#f8f8fc}
+*{box-sizing:border-box}
+body{margin:0}
+main{max-width:960px;margin:auto;padding:20px 16px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+.logo{background:#ffe8f1;border-radius:18px;padding:12px 16px;font-size:28px}
+h1{font-size:24px;margin:0}
+p{color:#727582;margin:4px 0}
+.layout{display:grid;grid-template-columns:1fr 1.3fr;gap:18px}
+.card{background:white;border:1px solid #e8e8f0;border-radius:20px;padding:18px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,0.03)}
+h2{font-size:17px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+button,input,textarea{font:inherit;border-radius:12px;padding:11px;border:1px solid #e5e5ed}
+button{cursor:pointer;background:#292a35;color:white;border:0;font-weight:500;transition:transform 0.1s,background 0.2s}
+button:active{transform:scale(0.97)}
+button.alt{background:#f1eff7;color:#292a35}
+button.pink{background:#f6c2d7;color:#34232b}
+button.usb{background:#4f46e5;color:white}
+button.usb.connected{background:#059669}
+input,textarea{width:100%}
+.row{display:flex;gap:8px;margin:8px 0}
+.row>*{flex:1}
+.status{font-size:13px;color:#747582;margin-top:10px;padding:8px 12px;background:#f9f9fc;border-radius:10px}
+.preview{background:#08090d;color:#00ffcc;border-radius:16px;padding:24px 15px;text-align:center;margin-bottom:12px;min-height:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;box-shadow:inset 0 0 15px rgba(0,255,204,0.15)}
+.big{font-size:36px;font-family:monospace;letter-spacing:1px}
+.label{font-size:14px;color:#8be9fd;margin-top:8px}
+.gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.gallery button{background:#fff;color:#292a35;border:1px solid #e8e8f0;text-align:left;padding:12px;min-height:56px;display:flex;align-items:center;gap:10px}
+.gallery button.active{background:#fff0f6;border-color:#e99cba}
+.faces{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.face{background:#fff;color:#292a35;border:1px solid #e8e8f0;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;min-height:76px}
+.face span{font-size:22px}
+.face small{font-size:11px;color:#727582}
+.face.active{background:#fff0f6;border:1px solid #e99cba}
+.small{font-size:12px;color:#8a8c99}
+@media(max-width:680px){
+  .layout{grid-template-columns:1fr}
+  .faces{grid-template-columns:repeat(3,1fr)}
+  .gallery{grid-template-columns:1fr}
+}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <div class="logo">♡</div>
+  <div>
+    <h1>CottonKitty & Little Reminder</h1>
+    <p>Your tiny animated companion with OLED Menu & OTG Web Serial</p>
+  </div>
+</header>
+
+<div class="layout">
+  <section>
+    <!-- Connection Options -->
+    <div class="card">
+      <h2>🔌 Connect to Companion</h2>
+      <p>Choose <b>USB-C OTG Cable</b> (fastest, zero Wi-Fi needed) or <b>Wi-Fi</b>:</p>
+      
+      <div style="margin:10px 0">
+        <button id="usbBtn" class="usb" style="width:100%" onclick="toggleUSB()">⚡ Connect USB-C OTG Cable</button>
+      </div>
+
+      <div class="row">
+        <input id="host" value="http://192.168.4.1">
+        <button onclick="connectWiFi()">Wi-Fi Connect</button>
+      </div>
+      <div id="status" class="status">Ready to connect via USB-C or Wi-Fi</div>
+    </div>
+
+    <!-- Send a Message -->
+    <div class="card">
+      <h2>💌 Send a Message to OLED</h2>
+      <textarea id="msg" maxlength="120" rows="2" placeholder="You make ordinary days feel special..."></textarea>
+      <div class="row">
+        <button class="pink" onclick="sendMsg()">Send to OLED</button>
+        <button class="alt" onclick="presetMsg('You matter. ♡')">You matter ♡</button>
+      </div>
+      <div class="row">
+        <button class="alt" onclick="presetMsg('Keep shining! ✨')">Keep shining ✨</button>
+        <button class="alt" onclick="presetMsg('A little hug for you! 🐾')">Hug 🐾</button>
+      </div>
+    </div>
+
+    <!-- 8 Original Drawings/Animations Gallery -->
+    <div class="card">
+      <h2>🖼️ Original Drawings Gallery</h2>
+      <p>Multi-frame animations & full-screen drawings from CottonKitty.</p>
+      <div class="gallery" id="gallery"></div>
+    </div>
+
+    <!-- Quick Reactions -->
+    <div class="card">
+      <h2>✨ Quick Reactions & Gestures</h2>
+      <div class="row">
+        <button class="pink" onclick="setMode('love')">♡ Love Hearts</button>
+        <button class="alt" onclick="sendPat()">🐾 Pat / Touch</button>
+      </div>
+      <div class="row">
+        <button class="alt" onclick="sendBurst()">💥 Double-Tap Burst</button>
+        <button class="alt" onclick="setMode('dance')">♪ Dance</button>
+      </div>
+      <div class="row">
+        <button class="alt" onclick="setMode('sleep')">💤 Sleep</button>
+        <button class="alt" onclick="setMode('sparkle')">✧ Sparkles</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Expressions Preview & Grid -->
+  <section>
+    <div class="card">
+      <h2>🐱 Live Preview & Expressions</h2>
+      <div class="preview">
+        <div class="big" id="preview">૮ ˶ᵔ ᵕ ᵔ˶ ა</div>
+        <div class="label" id="label">Happy Kitty</div>
+      </div>
+      <p class="small">Tap any expression below to display it instantly on your Little Reminder OLED:</p>
+      <div class="faces" id="faces"></div>
+    </div>
+  </section>
+</div>
+
+<p class="small" style="text-align:center;margin-top:20px">
+  Little Reminder & CottonKitty Unified Firmware · 128x64 SSD1306 · ESP32-C3 SuperMini · 32 Expressions + 8 Gallery Bitmaps
+</p>
+</main>
+
+<script>
+let port = null, writer = null, isUSB = false;
+
+const items = [
+  ['happy','Happy','૮ ˶ᵔ ᵕ ᵔ˶ ა'],['love','Love','♥‿♥'],['shy','Shy','⁄ ⁄>⁄ω⁄<⁄ ⁄'],['sleep','Sleepy','= ᴗ = z'],
+  ['laugh','Laugh','≧▽≦'],['cry','Crying','ಥ﹏ಥ'],['angry','Angry','ಠ益ಠ'],['surprise','Surprised','⊙０⊙'],
+  ['wink','Wink','😉'],['cool','Cool','⌐■_■'],['sad','Sad','｡•́︿•̀｡'],['blush','Blushing','(⁄ ⁄•⁄ω⁄•⁄ ⁄)'],
+  ['excited','Excited','✧▽✧'],['dance','Dancing','♪ᕕ(ᐛ)ᕗ'],['thinking','Thinking','(¬_¬ )'],['confused','Confused','(・・?)'],
+  ['ghost','Love Ghost','◉♡◉'],['bunny','Bunny','૮₍ ˶ᵔ ᵕ ᵔ˶ ₎ა'],['star','Starry','✦‿✦'],['heart','Heart','♥'],
+  ['sleepy','Drowsy','-ᴗ- zZ'],['proud','Proud','ᕙ( •̀ ᗜ •́ )ᕗ'],['oops','Oops','Σ(°ロ°)'],['relaxed','Relaxed','( ˘ω˘ )'],
+  ['sparkle','Sparkles','✧･ﾟ: *✧'],['tiny','Tiny Kitty','ฅ^•ﻌ•^ฅ'],['robot','Robot','[◉_◉]'],['kiss','Kiss','( ˘ ³˘)♥'],
+  ['pout','Pout','(｡•́︿•̀｡)'],['party','Party','☆ヾ(≧▽≦*)o'],['floating','Floating','~(˘▾˘~)'],['calm','Calm','(ᵕᴗᵕ)']
+];
+
+const galleryItems = [
+  ['gallery_catwalk','🐈','Walking cat · 28 frames'],
+  ['gallery_heartface','♡','Heart-eyes face · 28 frames'],
+  ['gallery_dove','🕊️','Dove with flower'],
+  ['gallery_sadface','☹','Sad face · 10 frames'],
+  ['gallery_catmouse','🐱','Cat & mouse cuddle'],
+  ['gallery_rainygirl','☂','Girl with umbrella'],
+  ['gallery_couple','♡','Couple high-five'],
+  ['gallery_girlportrait','✿','Girl portrait']
+];
+
+// Populate Gallery
+const gal = document.getElementById('gallery');
+galleryItems.forEach(x => {
+  let b = document.createElement('button');
+  b.innerHTML = `<span>${x[1]}</span> <div><b>${x[2].split('·')[0]}</b><br><small style="color:#747582">${x[2].split('·')[1]||'Drawing'}</small></div>`;
+  b.onclick = () => {
+    document.querySelectorAll('#gallery button, .face').forEach(y => y.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById('preview').textContent = x[1];
+    document.getElementById('label').textContent = x[2];
+    setMode(x[0]);
+  };
+  gal.appendChild(b);
+});
+
+// Populate Expressions
+const g = document.getElementById('faces');
+items.forEach(x => {
+  let b = document.createElement('button');
+  b.className = 'face';
+  b.innerHTML = `<span>${x[2]}</span><small>${x[1]}</small>`;
+  b.onclick = () => {
+    document.querySelectorAll('#gallery button, .face').forEach(y => y.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById('preview').textContent = x[2];
+    document.getElementById('label').textContent = x[1];
+    setMode(x[0]);
+  };
+  g.appendChild(b);
+});
+
+function base() {
+  return document.getElementById('host').value.trim().replace(/\/$/,'');
+}
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+function presetMsg(t) {
+  document.getElementById('msg').value = t;
+  sendMsg();
+}
+
+// Web Serial OTG Connection
+async function toggleUSB() {
+  if (isUSB && port) {
+    try {
+      if (writer) await writer.close();
+      await port.close();
+    } catch(e) {}
+    port = null; writer = null; isUSB = false;
+    document.getElementById('usbBtn').className = 'usb';
+    document.getElementById('usbBtn').textContent = '⚡ Connect USB-C OTG Cable';
+    setStatus('USB-C cable disconnected.');
+    return;
+  }
+
+  if (!navigator.serial) {
+    alert('Web Serial is supported on Chrome/Edge on Mac, PC, Chromebook, and Android with OTG cable!');
+    return;
+  }
+
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    const textEncoder = new TextEncoderStream();
+    textEncoder.readable.pipeTo(port.writable);
+    writer = textEncoder.writable.getWriter();
+    isUSB = true;
+    document.getElementById('usbBtn').className = 'usb connected';
+    document.getElementById('usbBtn').textContent = '🟢 USB-C OTG Connected!';
+    setStatus('🟢 Connected directly via USB-C OTG cable! Zero Wi-Fi needed.');
+    sendSerial('status\n');
+  } catch(e) {
+    setStatus('USB-C connection cancelled or failed.');
   }
 }
 
-void drawStar(int16_t x, int16_t y, int16_t r) {
-  display.drawLine(x - r, y, x + r, y, SSD1306_WHITE);
-  display.drawLine(x, y - r, x, y + r, SSD1306_WHITE);
-  if (r > 3) {
-    display.drawPixel(x - 1, y - 1, SSD1306_WHITE);
-    display.drawPixel(x + 1, y - 1, SSD1306_WHITE);
-    display.drawPixel(x - 1, y + 1, SSD1306_WHITE);
-    display.drawPixel(x + 1, y + 1, SSD1306_WHITE);
+async function sendSerial(str) {
+  if (writer) {
+    try {
+      await writer.write(str);
+      return true;
+    } catch(e) {
+      console.error(e);
+    }
+  }
+  return false;
+}
+
+// Wi-Fi HTTP Connection
+async function connectWiFi() {
+  setStatus('Connecting to ' + base() + '...');
+  try {
+    let r = await fetch(base() + '/api/status');
+    if (!r.ok) throw 0;
+    let data = await r.json();
+    setStatus('🟢 Connected to ' + data.name + ' over Wi-Fi! Mode: ' + data.mode);
+  } catch(e) {
+    setStatus('Connection failed. Connect to Wi-Fi CottonKitty (kittyfriend) or ESP.');
   }
 }
 
-// Draw cute vector faces
-void drawPuppy(uint32_t t = 0) {
-  // Floppy ears
-  display.fillRoundRect(22, 14, 14, 28, 6, SSD1306_WHITE);
-  display.fillRoundRect(92, 14, 14, 28, 6, SSD1306_WHITE);
-  display.fillRoundRect(25, 17, 8, 22, 4, SSD1306_BLACK);
-  display.fillRoundRect(95, 17, 8, 22, 4, SSD1306_BLACK);
-
-  // Head contour
-  display.drawRoundRect(32, 12, 64, 46, 18, SSD1306_WHITE);
-
-  // Big friendly puppy eyes
-  display.fillCircle(48, 28, 7, SSD1306_WHITE);
-  display.fillCircle(80, 28, 7, SSD1306_WHITE);
-  display.fillCircle(46, 26, 2, SSD1306_BLACK); // pupil reflection
-  display.fillCircle(78, 26, 2, SSD1306_BLACK);
-
-  // Nose
-  display.fillTriangle(64, 40, 58, 35, 70, 35, SSD1306_WHITE);
-
-  // W-shaped cute mouth
-  display.drawCircle(59, 44, 4, SSD1306_WHITE);
-  display.drawCircle(69, 44, 4, SSD1306_WHITE);
-  display.fillRect(52, 38, 24, 5, SSD1306_BLACK);
+// Unified Dispatchers
+async function setMode(n) {
+  if (isUSB) {
+    await sendSerial('mode:' + n + '\n');
+    setStatus('⚡ Sent mode via USB-C OTG: ' + n);
+    return;
+  }
+  try {
+    await fetch(base() + '/api/mode?name=' + encodeURIComponent(n));
+    setStatus('Sent mode to OLED: ' + n);
+  } catch(e) {
+    setStatus('Not connected. Use USB-C OTG Cable or Wi-Fi.');
+  }
 }
 
-void drawFox(uint32_t t = 0) {
-  // Pointy Fox Ears
-  display.fillTriangle(26, 32, 42, 8, 52, 28, SSD1306_WHITE);
-  display.fillTriangle(102, 32, 86, 8, 76, 28, SSD1306_WHITE);
-  display.fillTriangle(30, 30, 42, 14, 48, 27, SSD1306_BLACK);
-  display.fillTriangle(98, 30, 86, 14, 80, 27, SSD1306_BLACK);
+async function sendMsg() {
+  let t = document.getElementById('msg').value.trim();
+  if (!t) return;
+  if (isUSB) {
+    await sendSerial('msg:' + t + '\n');
+    setStatus('⚡ Sent message via USB-C OTG: ' + t);
+    return;
+  }
+  try {
+    await fetch(base() + '/api/message?text=' + encodeURIComponent(t));
+    setStatus('Message sent to OLED!');
+  } catch(e) {
+    setStatus('Not connected. Use USB-C OTG Cable or Wi-Fi.');
+  }
+}
 
-  // Sleeping / happy arched eyes
-  display.drawCircle(46, 36, 8, SSD1306_WHITE);
-  display.fillRect(36, 36, 20, 10, SSD1306_BLACK);
-  display.drawCircle(82, 36, 8, SSD1306_WHITE);
-  display.fillRect(72, 36, 20, 10, SSD1306_BLACK);
+async function sendPat() {
+  if (isUSB) {
+    await sendSerial('pat\n');
+    setStatus('⚡ Sent Pat reaction via USB-C OTG');
+    return;
+  }
+  setMode('love');
+}
 
-  // Tip nose
-  display.fillTriangle(64, 46, 60, 41, 68, 41, SSD1306_WHITE);
+async function sendBurst() {
+  if (isUSB) {
+    await sendSerial('doubletap\n');
+    setStatus('⚡ Sent Heart Explosion via USB-C OTG');
+    return;
+  }
+  setMode('love');
+}
+</script>
+</body>
+</html>
+)rawliteral";
 
-  // Cozy Zzz floating
+// ==========================================
+// 🎨 OLED DRAWING UTILITIES
+// ==========================================
+void centered(String s, int y) {
+  int16_t x1, y1;
+  uint16_t w, h;
   display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(98, 12); display.print("z");
-  display.setCursor(106, 6);  display.print("Z");
+  display.getTextBounds(s, 0, y, &x1, &y1, &w, &h);
+  display.setCursor(max(0, (128 - (int)w) / 2), y);
+  display.print(s);
 }
 
-void drawKitty(uint32_t t = 0) {
-  // Triangular cat ears
-  display.fillTriangle(30, 30, 40, 10, 52, 24, SSD1306_WHITE);
-  display.fillTriangle(98, 30, 88, 10, 76, 24, SSD1306_WHITE);
-  display.fillTriangle(33, 28, 40, 14, 48, 24, SSD1306_BLACK);
-  display.fillTriangle(95, 28, 88, 14, 80, 24, SSD1306_BLACK);
-
-  // Head
-  display.drawRoundRect(32, 18, 64, 42, 16, SSD1306_WHITE);
-
-  // Large round anime eyes
-  display.fillCircle(46, 33, 6, SSD1306_WHITE);
-  display.fillCircle(82, 33, 6, SSD1306_WHITE);
-  display.fillCircle(45, 31, 2, SSD1306_BLACK);
-  display.fillCircle(81, 31, 2, SSD1306_BLACK);
-
-  // Nose & mouth
-  display.drawPixel(64, 42, SSD1306_WHITE);
-  display.drawCircle(60, 45, 3, SSD1306_WHITE);
-  display.drawCircle(68, 45, 3, SSD1306_WHITE);
-  display.fillRect(55, 40, 18, 4, SSD1306_BLACK);
-
-  // Whiskers
-  display.drawLine(24, 38, 36, 40, SSD1306_WHITE);
-  display.drawLine(24, 44, 36, 43, SSD1306_WHITE);
-  display.drawLine(104, 38, 92, 40, SSD1306_WHITE);
-  display.drawLine(104, 44, 92, 43, SSD1306_WHITE);
+void star(int x, int y) {
+  display.drawLine(x - 3, y, x + 3, y, SSD1306_WHITE);
+  display.drawLine(x, y - 3, x, y + 3, SSD1306_WHITE);
 }
 
-void drawPanda(uint32_t t = 0) {
-  // Round black panda ears
-  display.fillCircle(34, 18, 10, SSD1306_WHITE);
-  display.fillCircle(94, 18, 10, SSD1306_WHITE);
-
-  // Head outline
-  display.drawRoundRect(30, 14, 68, 46, 18, SSD1306_WHITE);
-
-  // Iconic diagonal panda eye patches
-  display.fillRoundRect(40, 26, 14, 12, 5, SSD1306_WHITE);
-  display.fillRoundRect(74, 26, 14, 12, 5, SSD1306_WHITE);
-  display.fillCircle(47, 32, 2, SSD1306_BLACK);
-  display.fillCircle(81, 32, 2, SSD1306_BLACK);
-
-  // Nose & soft smile
-  display.fillCircle(64, 40, 3, SSD1306_WHITE);
-  display.drawCircle(64, 46, 5, SSD1306_WHITE);
-  display.fillRect(56, 40, 16, 5, SSD1306_BLACK);
-}
-
-void drawHamster(uint32_t t = 0) {
-  // Small round hamster ears
-  display.fillCircle(38, 16, 7, SSD1306_WHITE);
-  display.fillCircle(90, 16, 7, SSD1306_WHITE);
-  display.fillCircle(38, 16, 4, SSD1306_BLACK);
-  display.fillCircle(90, 16, 4, SSD1306_BLACK);
-
-  // Chubby cheeks body
-  display.drawRoundRect(30, 16, 68, 44, 18, SSD1306_WHITE);
-
-  // Sparkly bead eyes
-  display.fillCircle(46, 32, 5, SSD1306_WHITE);
-  display.fillCircle(82, 32, 5, SSD1306_WHITE);
-  display.fillCircle(45, 30, 2, SSD1306_BLACK);
-  display.fillCircle(81, 30, 2, SSD1306_BLACK);
-
-  // Little mouth
-  display.fillTriangle(64, 38, 62, 36, 66, 36, SSD1306_WHITE);
-  display.drawPixel(64, 42, SSD1306_WHITE);
-  display.drawPixel(63, 43, SSD1306_WHITE);
-  display.drawPixel(65, 43, SSD1306_WHITE);
-
-  // Puffed blush cheeks
-  display.drawCircle(36, 40, 4, SSD1306_WHITE);
-  display.drawCircle(92, 40, 4, SSD1306_WHITE);
-}
-
-void drawBunny(uint32_t t = 0) {
-  // Tall bunny ears
-  display.fillRoundRect(42, 4, 10, 26, 5, SSD1306_WHITE);
-  display.fillRoundRect(76, 4, 10, 26, 5, SSD1306_WHITE);
-  display.fillRoundRect(44, 7, 6, 20, 3, SSD1306_BLACK);
-  display.fillRoundRect(78, 7, 6, 20, 3, SSD1306_BLACK);
-
-  // Face
-  display.drawRoundRect(34, 20, 60, 40, 16, SSD1306_WHITE);
-
-  // Gentle eyes
-  display.fillCircle(48, 36, 5, SSD1306_WHITE);
-  display.fillCircle(80, 36, 5, SSD1306_WHITE);
-  display.fillCircle(47, 34, 2, SSD1306_BLACK);
-  display.fillCircle(79, 34, 2, SSD1306_BLACK);
-
-  // Bunny Y-mouth
-  display.fillTriangle(64, 43, 62, 41, 66, 41, SSD1306_WHITE);
-  display.drawLine(64, 43, 64, 47, SSD1306_WHITE);
-  display.drawLine(64, 47, 60, 50, SSD1306_WHITE);
-  display.drawLine(64, 47, 68, 50, SSD1306_WHITE);
-}
-
-void drawHappy(uint32_t t = 0) {
-  display.drawCircle(42, 28, 10, SSD1306_WHITE);
-  display.fillRect(30, 28, 24, 14, SSD1306_BLACK);
-  display.drawCircle(86, 28, 10, SSD1306_WHITE);
-  display.fillRect(74, 28, 24, 14, SSD1306_BLACK);
-
-  display.drawCircle(64, 34, 16, SSD1306_WHITE);
-  display.fillRect(46, 20, 36, 17, SSD1306_BLACK);
-
-  display.fillCircle(28, 38, 4, SSD1306_WHITE);
-  display.fillCircle(100, 38, 4, SSD1306_WHITE);
-}
-
-void drawWink(uint32_t t = 0) {
-  // Left eye winking (star)
-  drawStar(42, 28, 9);
-  // Right eye open
-  display.drawCircle(86, 28, 9, SSD1306_WHITE);
-  display.fillCircle(86, 28, 4, SSD1306_WHITE);
-
-  // Playful smirk
-  display.drawCircle(66, 38, 10, SSD1306_WHITE);
-  display.fillRect(52, 28, 28, 12, SSD1306_BLACK);
-}
-
-void drawLoving(uint32_t t = 0) {
-  // Big heart eyes!
-  drawHeart(42, 26, 14, true);
-  drawHeart(86, 26, 14, true);
-
-  // Warm happy smile
-  display.drawCircle(64, 36, 14, SSD1306_WHITE);
-  display.fillRect(48, 22, 32, 15, SSD1306_BLACK);
-}
-
-void drawSleepy(uint32_t t = 0) {
-  display.drawCircle(42, 32, 10, SSD1306_WHITE);
-  display.fillRect(30, 22, 24, 11, SSD1306_BLACK);
-  display.drawCircle(86, 32, 10, SSD1306_WHITE);
-  display.fillRect(74, 22, 24, 11, SSD1306_BLACK);
-
-  display.drawPixel(64, 45, SSD1306_WHITE);
-  display.drawPixel(63, 45, SSD1306_WHITE);
-  display.drawPixel(65, 45, SSD1306_WHITE);
-
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(96, 16); display.print("z");
-  display.setCursor(105, 9);  display.print("Z");
-  display.setCursor(115, 2);  display.print("Z");
-}
-
-void renderFaceByIndex(uint8_t index, uint32_t t = 0) {
-  switch (index) {
-    case 0: drawPuppy(t); break;
-    case 1: drawFox(t); break;
-    case 2: drawKitty(t); break;
-    case 3: drawPanda(t); break;
-    case 4: drawHamster(t); break;
-    case 5: drawBunny(t); break;
-    case 6: drawHappy(t); break;
-    case 7: drawWink(t); break;
-    case 8: drawLoving(t); break;
-    case 9: drawSleepy(t); break;
-    case 10: 
-      if (hasCustomBitmap) display.drawBitmap(0, 0, customBitmap, 128, 64, SSD1306_WHITE);
-      else drawHappy(t);
-      break;
-    default: drawHappy(t); break;
-  }
+void heart(int x, int y, int r) {
+  display.fillCircle(x - r, y, r, SSD1306_WHITE);
+  display.fillCircle(x + r, y, r, SSD1306_WHITE);
+  display.fillTriangle(x - 2 * r, y, x + 2 * r, y, x, y + 3 * r, SSD1306_WHITE);
 }
 
 // ==========================================
-// 💓 REACTION ENGINES (SINGLE & DOUBLE TAP)
+// 🎭 MAIN DISPLAY RENDERING (Modes, Gallery & Expressions)
 // ==========================================
-void renderReactionFrame() {
+void drawMode() {
+  unsigned long t = millis();
   display.clearDisplay();
 
-  if (currentMode == MODE_DOUBLE_TAP) {
-    // 🌟 DOUBLE-TAP GESTURE: Massive Radiant Heart Explosion!
-    int pulse = (animTick * 3) % 40;
-    drawHeart(64, 30, 10 + pulse, false);
-    drawHeart(64, 30, 6 + (pulse / 2), true);
-
-    // Shooting stars
-    drawStar(20, 20 + (animTick % 20), 4);
-    drawStar(108, 20 + ((animTick + 10) % 20), 4);
-    drawStar(30, 50 - (animTick % 25), 3);
-    drawStar(98, 50 - ((animTick + 7) % 25), 3);
-
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(32, 54);
-    display.print(F("<3 LOVE YOU <3"));
-  } else {
-    // 🐾 SINGLE-TAP: Face-specific personality reaction!
-    renderFaceByIndex(currentFaceIndex, animTick);
-
-    // Floating heart from nose/cheeks
-    int heartY = 36 - ((animTick * 2) % 32);
-    int heartX = 64 + (int)(sin(animTick * 0.5) * 10);
-    drawHeart(heartX, heartY, 8, true);
-
-    if (animTick % 6 < 3) {
-      drawStar(20, 16, 4);
-      drawStar(108, 16, 4);
+  // 1. Check if an animated reaction overlay is active
+  if (currentReaction == REACTION_BURST) {
+    unsigned long elapsed = t - reactionStartTime;
+    if (elapsed < REACTION_DURATION) {
+      uint8_t frame = (elapsed / 80) % 8;
+      display.fillRect(10, 10, 108, 44, SSD1306_BLACK);
+      display.drawRoundRect(8, 8, 112, 48, 8, SSD1306_WHITE);
+      heart(64, 30 - frame, 4 + (frame % 3));
+      heart(36 - (frame * 2), 24 + frame, 3);
+      heart(92 + (frame * 2), 24 + frame, 3);
+      heart(48, 46, 2);
+      heart(80, 46, 2);
+      star(24, 18);
+      star(104, 18);
+      centered(F("♡ LOVE BURST! ♡"), 48);
+      display.display();
+      return;
+    } else {
+      currentReaction = REACTION_NONE;
     }
   }
 
-  display.display();
-}
+  // 2. Gallery Bitmaps (CottonKitty 8 original drawings/animations)
+  if (currentMode.startsWith("gallery_") || currentMode == "uploaded") {
+    const uint8_t* const* selectedFrames = heartfaceFrames;
+    uint8_t selectedCount = heartfaceCount;
 
-// Word-wrapped text renderer for messages
-void renderWrappedMessage(const String &text) {
-  display.clearDisplay();
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
+    if (currentMode == "gallery_catwalk") {
+      selectedFrames = catwalkFrames;
+      selectedCount = catwalkCount;
+    } else if (currentMode == "gallery_heartface" || currentMode == "uploaded") {
+      selectedFrames = heartfaceFrames;
+      selectedCount = heartfaceCount;
+    } else if (currentMode == "gallery_dove") {
+      selectedFrames = doveFrames;
+      selectedCount = doveCount;
+    } else if (currentMode == "gallery_sadface") {
+      selectedFrames = sadfaceFrames;
+      selectedCount = sadfaceCount;
+    } else if (currentMode == "gallery_catmouse") {
+      selectedFrames = catmouseFrames;
+      selectedCount = catmouseCount;
+    } else if (currentMode == "gallery_rainygirl") {
+      selectedFrames = rainygirlFrames;
+      selectedCount = rainygirlCount;
+    } else if (currentMode == "gallery_couple") {
+      selectedFrames = coupleFrames;
+      selectedCount = coupleCount;
+    } else if (currentMode == "gallery_girlportrait") {
+      selectedFrames = girlportraitFrames;
+      selectedCount = girlportraitCount;
+    }
 
-  // Border frame
-  display.drawRoundRect(2, 2, 124, 60, 6, SSD1306_WHITE);
-  display.setCursor(10, 8);
-  display.print(F("=== REMINDER ==="));
-
-  int y = 22;
-  int start = 0;
-  while (start < text.length() && y < 52) {
-    String line = text.substring(start, min((int)text.length(), start + 18));
-    display.setCursor(10, y);
-    display.print(line);
-    y += 10;
-    start += 18;
+    if (selectedCount > 0) {
+      if (frameIdx >= selectedCount) frameIdx = 0;
+      display.drawBitmap(0, 0, selectedFrames[frameIdx], 128, 64, SSD1306_WHITE);
+      if (t - lastFrame >= 120) {
+        lastFrame = t;
+        frameIdx = (frameIdx + 1) % selectedCount;
+      }
+    }
   }
+  // 3. Custom Messages
+  else if (currentMode == "message") {
+    heart(64, 16, 5);
+    String s = currentMessage;
+    if (s.length() > 21) s = s.substring(0, 21);
+    centered(s, 44);
+  }
+  // 4. Procedural Expressive Kaomoji Faces (CottonKitty 32 Faces)
+  else {
+    bool blink = (t % 3000) < 120;
+
+    if (currentMode == "love" || currentMode == "heart" || currentMode == "ghost" || currentMode == "kiss") {
+      display.drawRoundRect(29, 16, 70, 39, 13, SSD1306_WHITE);
+      display.fillCircle(48, 31, 5, SSD1306_WHITE);
+      display.fillCircle(78, 31, 5, SSD1306_WHITE);
+      display.fillCircle(48, 31, 2, SSD1306_BLACK);
+      display.fillCircle(78, 31, 2, SSD1306_BLACK);
+      display.drawLine(55, 42, 63, 47, SSD1306_WHITE);
+      display.drawLine(63, 47, 71, 42, SSD1306_WHITE);
+      heart(101, 12, 2);
+      star(17, 21);
+      star(111, 49);
+      if (currentReaction == REACTION_LOVE) {
+        heart(22, 12, 3);
+        heart(106, 26, 3);
+      }
+    }
+    else if (currentMode == "sleep" || currentMode == "sleepy" || currentReaction == REACTION_SNOOZE) {
+      display.drawRoundRect(30, 18, 68, 34, 12, SSD1306_WHITE);
+      display.drawLine(42, 33, 54, 33, SSD1306_WHITE);
+      display.drawLine(74, 33, 86, 33, SSD1306_WHITE);
+      centered("z", 20 + (t / 400) % 10);
+      centered("Z", 8 + (t / 500) % 8);
+      display.drawLine(54, 43, 74, 43, SSD1306_WHITE);
+    }
+    else if (currentMode == "stars" || currentMode == "sparkle" || currentMode == "star" || currentMode == "bunny" || currentMode == "floating") {
+      star(18, 14);
+      star(108, 17);
+      star(25, 51);
+      star(102, 48);
+      display.drawRoundRect(42, 20, 44, 33, 12, SSD1306_WHITE);
+      display.fillCircle(54, 32, 2, SSD1306_WHITE);
+      display.fillCircle(74, 32, 2, SSD1306_WHITE);
+      display.drawLine(54, 40, 64, 44, SSD1306_WHITE);
+      display.drawLine(64, 44, 74, 40, SSD1306_WHITE);
+      heart(64, 8, 2);
+    }
+    else {
+      int bob = (currentMode == "dance" || currentMode == "party" || currentMode == "excited") ? ((t / 180) % 2 * 3) : 0;
+      display.drawRoundRect(30, 16 + bob, 68, 39, 12, SSD1306_WHITE);
+
+      if (currentMode == "angry" || currentMode == "pout") {
+        display.drawLine(41, 25 + bob, 55, 31 + bob, SSD1306_WHITE);
+        display.drawLine(73, 31 + bob, 87, 25 + bob, SSD1306_WHITE);
+      }
+      else if (currentMode == "cry" || currentMode == "sad") {
+        display.drawLine(42, 30 + bob, 55, 34 + bob, SSD1306_WHITE);
+        display.drawLine(73, 34 + bob, 86, 30 + bob, SSD1306_WHITE);
+        display.drawLine(48, 35, 45, 44, SSD1306_WHITE);
+        display.drawLine(80, 35, 83, 44, SSD1306_WHITE);
+      }
+      else if (blink) {
+        display.drawLine(43, 32 + bob, 55, 32 + bob, SSD1306_WHITE);
+        display.drawLine(73, 32 + bob, 85, 32 + bob, SSD1306_WHITE);
+      }
+      else {
+        display.fillRoundRect(43, 25 + bob, 12, 15, 4, SSD1306_WHITE);
+        display.fillRoundRect(73, 25 + bob, 12, 15, 4, SSD1306_WHITE);
+      }
+
+      if (currentMode == "surprise" || currentMode == "oops") {
+        display.drawCircle(64, 44 + bob, 5, SSD1306_WHITE);
+      } else {
+        display.drawLine(54, 43 + bob, 60, 47 + bob, SSD1306_WHITE);
+        display.drawLine(60, 47 + bob, 68, 47 + bob, SSD1306_WHITE);
+        display.drawLine(68, 47 + bob, 74, 43 + bob, SSD1306_WHITE);
+      }
+
+      if (currentMode == "shy" || currentMode == "blush") {
+        display.drawLine(36, 39, 41, 39, SSD1306_WHITE);
+        display.drawLine(87, 39, 92, 39, SSD1306_WHITE);
+      }
+      if (currentMode == "thinking" || currentMode == "confused") {
+        centered("?", 3);
+      }
+      if (currentMode == "cool") {
+        display.drawRect(40, 25, 18, 12, SSD1306_WHITE);
+        display.drawRect(70, 25, 18, 12, SSD1306_WHITE);
+        display.drawLine(58, 30, 70, 30, SSD1306_WHITE);
+      }
+      if (currentMode == "robot") {
+        display.drawRect(40, 24, 18, 15, SSD1306_WHITE);
+        display.drawRect(70, 24, 18, 15, SSD1306_WHITE);
+      }
+      if (currentMode == "tiny") {
+        display.drawLine(36, 19, 45, 10, SSD1306_WHITE);
+        display.drawLine(45, 10, 53, 19, SSD1306_WHITE);
+        display.drawLine(75, 19, 83, 10, SSD1306_WHITE);
+        display.drawLine(83, 10, 92, 19, SSD1306_WHITE);
+      }
+      if (currentMode == "dance" || currentMode == "party" || currentMode == "excited") {
+        star(17, 20);
+        star(109, 16);
+      }
+    }
+  }
+
   display.display();
 }
 
@@ -446,72 +691,23 @@ void renderWrappedMessage(const String &text) {
 void renderMenu() {
   display.clearDisplay();
 
-  // Header banner
+  // Header Banner
   display.fillRect(0, 0, 128, 11, SSD1306_WHITE);
   display.setTextColor(SSD1306_BLACK);
   display.setTextSize(1);
   display.setCursor(14, 2);
 
-  if (currentMenuLevel == MENU_MAIN) {
+  if (currentMenuState == MENU_MAIN) {
     display.print(F("=== MENU SELECT ==="));
     const char* items[] = {
-      "1. Cute Pets (6)",
-      "2. Expressions (4)",
-      "3. Show Message",
+      "1. Gallery Drawings (8)",
+      "2. Cute Expressions",
+      "3. Preset Messages (5)",
       "4. Settings & Power",
       "5. [ Close Menu ]"
     };
-    uint8_t count = 5;
+    const uint8_t count = 5;
 
-    display.setTextSize(1);
-    for (uint8_t i = 0; i < count && i < 4; i++) {
-      uint8_t idx = i + menuScroll;
-      if (idx >= count) break;
-      uint8_t y = 14 + (i * 12);
-      bool isSelected = (idx == menuCursor);
-
-      if (isSelected) {
-        display.fillRect(0, y - 1, 128, 11, SSD1306_WHITE);
-        display.setTextColor(SSD1306_BLACK);
-        display.setCursor(2, y);
-        display.print("> ");
-        display.print(items[idx]);
-      } else {
-        display.setTextColor(SSD1306_WHITE);
-        display.setCursor(10, y);
-        display.print(items[idx]);
-      }
-    }
-  } else if (currentMenuLevel == MENU_SETTINGS) {
-    display.print(F("=== SETTINGS ==="));
-    String items[4];
-    items[0] = String("AutoSleep: [") + (autoSleepEnabled ? "ON" : "OFF") + "]";
-    items[1] = String("Wi-Fi AP:  [") + (wifiEnabled ? "ON" : "OFF") + "]";
-    items[2] = String("DoubleTap: [") + (doubleTapEnabled ? "ON" : "OFF") + "]";
-    items[3] = "< Back to Menu";
-    uint8_t count = 4;
-
-    display.setTextSize(1);
-    for (uint8_t i = 0; i < count; i++) {
-      uint8_t y = 14 + (i * 12);
-      bool isSelected = (i == menuCursor);
-
-      if (isSelected) {
-        display.fillRect(0, y - 1, 128, 11, SSD1306_WHITE);
-        display.setTextColor(SSD1306_BLACK);
-        display.setCursor(2, y);
-        display.print("> ");
-        display.print(items[i]);
-      } else {
-        display.setTextColor(SSD1306_WHITE);
-        display.setCursor(10, y);
-        display.print(items[i]);
-      }
-    }
-  } else if (currentMenuLevel == MENU_PETS) {
-    display.print(F("=== CUTE PETS ==="));
-    const char* items[] = { "Puppy", "Cozy Fox", "Kitty", "Panda", "Hamster", "Bunny", "< Back" };
-    uint8_t count = 7;
     for (uint8_t i = 0; i < 4; i++) {
       uint8_t idx = i + menuScroll;
       if (idx >= count) break;
@@ -530,10 +726,122 @@ void renderMenu() {
         display.print(items[idx]);
       }
     }
-  } else if (currentMenuLevel == MENU_EXPR) {
+  }
+  else if (currentMenuState == MENU_GALLERY) {
+    display.print(F("=== GALLERY (8) ==="));
+    const char* items[] = {
+      "Walking Cat (28F)",
+      "Heartface (28F)",
+      "Dove with Flower",
+      "Sad Face (10F)",
+      "Cat & Mouse Cuddle",
+      "Girl with Umbrella",
+      "Couple High-Five",
+      "Girl Portrait",
+      "< Back to Menu"
+    };
+    const uint8_t count = 9;
+
+    for (uint8_t i = 0; i < 4; i++) {
+      uint8_t idx = i + menuScroll;
+      if (idx >= count) break;
+      uint8_t y = 14 + (i * 12);
+      bool isSelected = (idx == menuCursor);
+
+      if (isSelected) {
+        display.fillRect(0, y - 1, 128, 11, SSD1306_WHITE);
+        display.setTextColor(SSD1306_BLACK);
+        display.setCursor(2, y);
+        display.print("> ");
+        display.print(items[idx]);
+      } else {
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(10, y);
+        display.print(items[idx]);
+      }
+    }
+  }
+  else if (currentMenuState == MENU_EXPRESSIONS) {
     display.print(F("=== EXPRESSIONS ==="));
-    const char* items[] = { "Happy Smiles", "Wink Star", "Loving Hearts", "Sweet Sleepy", "< Back" };
-    uint8_t count = 5;
+    const char* items[] = {
+      "Happy Kitty",
+      "Love Hearts",
+      "Shy Blush",
+      "Sweet Sleepy",
+      "Laughing",
+      "Crying Tear",
+      "Angry Pout",
+      "Surprised",
+      "Starry Wink",
+      "Cool Shades",
+      "Tiny Kitty",
+      "Robot Face",
+      "Dancing",
+      "Party Star",
+      "Calm Hug",
+      "< Back to Menu"
+    };
+    const uint8_t count = 16;
+
+    for (uint8_t i = 0; i < 4; i++) {
+      uint8_t idx = i + menuScroll;
+      if (idx >= count) break;
+      uint8_t y = 14 + (i * 12);
+      bool isSelected = (idx == menuCursor);
+
+      if (isSelected) {
+        display.fillRect(0, y - 1, 128, 11, SSD1306_WHITE);
+        display.setTextColor(SSD1306_BLACK);
+        display.setCursor(2, y);
+        display.print("> ");
+        display.print(items[idx]);
+      } else {
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(10, y);
+        display.print(items[idx]);
+      }
+    }
+  }
+  else if (currentMenuState == MENU_MESSAGES) {
+    display.print(F("=== MESSAGES ==="));
+    const char* items[] = {
+      "1. You matter.",
+      "2. You make me smile.",
+      "3. A little hug for you",
+      "4. You are appreciated",
+      "5. Keep shining.",
+      "< Back to Menu"
+    };
+    const uint8_t count = 6;
+
+    for (uint8_t i = 0; i < 4; i++) {
+      uint8_t idx = i + menuScroll;
+      if (idx >= count) break;
+      uint8_t y = 14 + (i * 12);
+      bool isSelected = (idx == menuCursor);
+
+      if (isSelected) {
+        display.fillRect(0, y - 1, 128, 11, SSD1306_WHITE);
+        display.setTextColor(SSD1306_BLACK);
+        display.setCursor(2, y);
+        display.print("> ");
+        display.print(items[idx]);
+      } else {
+        display.setTextColor(SSD1306_WHITE);
+        display.setCursor(10, y);
+        display.print(items[idx]);
+      }
+    }
+  }
+  else if (currentMenuState == MENU_SETTINGS) {
+    display.print(F("=== SETTINGS ==="));
+    String items[4];
+    items[0] = String("AutoSleep: [") + (autoSleepEnabled ? "ON" : "OFF") + "]";
+    items[1] = String("Wi-Fi AP:  [") + (wifiEnabled ? "ON" : "OFF") + "]";
+    items[2] = String("DoubleTap: [") + (doubleTapEnabled ? "ON" : "OFF") + "]";
+    items[3] = "< Back to Menu";
+    const uint8_t count = 4;
+
     for (uint8_t i = 0; i < count; i++) {
       uint8_t y = 14 + (i * 12);
       bool isSelected = (i == menuCursor);
@@ -556,573 +864,410 @@ void renderMenu() {
 }
 
 // ==========================================
-// 🌙 POWER & SLEEP MANAGEMENT
+// 🔘 HARDWARE BUTTON HANDLERS (BTN1: GPIO 9, BTN2: GPIO 1)
+// ==========================================
+void handleButtons() {
+  bool btn1Reading = digitalRead(BTN1_PIN);
+  bool btn2Reading = digitalRead(BTN2_PIN);
+
+  // Debounce Button 1 (Next / Scroll)
+  if (btn1Reading != btn1LastState) {
+    btn1LastDebounceTime = millis();
+  }
+  if ((millis() - btn1LastDebounceTime) > DEBOUNCE_DELAY) {
+    static bool btn1Processed = false;
+    if (btn1Reading == LOW && !btn1Processed) {
+      btn1Processed = true;
+      lastActivityTime = millis();
+      if (isSleeping) { wakeUp(); return; }
+
+      if (currentMenuState == STATE_NORMAL) {
+        // Cycle to next mode (CottonKitty 40 modes!)
+        modeIdx = (modeIdx + 1) % TOTAL_MODES;
+        currentMode = ALL_MODES[modeIdx];
+        frameIdx = 0;
+        Serial.print(F("[Button 1] Switched to mode: "));
+        Serial.println(currentMode);
+      } else {
+        // Scroll Menu Cursor Down
+        uint8_t maxItems = 5;
+        if (currentMenuState == MENU_GALLERY) maxItems = 9;
+        else if (currentMenuState == MENU_EXPRESSIONS) maxItems = 16;
+        else if (currentMenuState == MENU_MESSAGES) maxItems = 6;
+        else if (currentMenuState == MENU_SETTINGS) maxItems = 4;
+
+        menuCursor = (menuCursor + 1) % maxItems;
+        if (menuCursor >= menuScroll + 4) menuScroll = menuCursor - 3;
+        if (menuCursor < menuScroll) menuScroll = menuCursor;
+        renderMenu();
+      }
+    } else if (btn1Reading == HIGH) {
+      btn1Processed = false;
+    }
+  }
+  btn1LastState = btn1Reading;
+
+  // Debounce Button 2 (Menu Open / Select)
+  if (btn2Reading != btn2LastState) {
+    btn2LastDebounceTime = millis();
+  }
+  if ((millis() - btn2LastDebounceTime) > DEBOUNCE_DELAY) {
+    static bool btn2Processed = false;
+    if (btn2Reading == LOW && !btn2Processed) {
+      btn2Processed = true;
+      lastActivityTime = millis();
+      if (isSleeping) { wakeUp(); return; }
+
+      if (currentMenuState == STATE_NORMAL) {
+        // Open the On-Screen OLED Menu!
+        currentMenuState = MENU_MAIN;
+        menuCursor = 0;
+        menuScroll = 0;
+        renderMenu();
+      }
+      else if (currentMenuState == MENU_MAIN) {
+        if (menuCursor == 0) {
+          currentMenuState = MENU_GALLERY;
+          menuCursor = 0; menuScroll = 0;
+        } else if (menuCursor == 1) {
+          currentMenuState = MENU_EXPRESSIONS;
+          menuCursor = 0; menuScroll = 0;
+        } else if (menuCursor == 2) {
+          currentMenuState = MENU_MESSAGES;
+          menuCursor = 0; menuScroll = 0;
+        } else if (menuCursor == 3) {
+          currentMenuState = MENU_SETTINGS;
+          menuCursor = 0; menuScroll = 0;
+        } else if (menuCursor == 4) {
+          currentMenuState = STATE_NORMAL; // Close Menu
+        }
+        if (currentMenuState != STATE_NORMAL) renderMenu();
+      }
+      else if (currentMenuState == MENU_GALLERY) {
+        const char* gModes[] = {
+          "gallery_catwalk", "gallery_heartface", "gallery_dove",
+          "gallery_sadface", "gallery_catmouse", "gallery_rainygirl",
+          "gallery_couple", "gallery_girlportrait"
+        };
+        if (menuCursor >= 0 && menuCursor < 8) {
+          currentMode = gModes[menuCursor];
+          frameIdx = 0;
+          currentMenuState = STATE_NORMAL;
+        } else {
+          currentMenuState = MENU_MAIN;
+          menuCursor = 0; menuScroll = 0;
+          renderMenu();
+        }
+      }
+      else if (currentMenuState == MENU_EXPRESSIONS) {
+        const char* eModes[] = {
+          "happy", "love", "shy", "sleep", "laugh", "cry",
+          "angry", "surprise", "wink", "cool", "tiny",
+          "robot", "dance", "party", "calm"
+        };
+        if (menuCursor >= 0 && menuCursor < 15) {
+          currentMode = eModes[menuCursor];
+          frameIdx = 0;
+          currentMenuState = STATE_NORMAL;
+        } else {
+          currentMenuState = MENU_MAIN;
+          menuCursor = 1; menuScroll = 0;
+          renderMenu();
+        }
+      }
+      else if (currentMenuState == MENU_MESSAGES) {
+        if (menuCursor >= 0 && menuCursor < 5) {
+          greetingIdx = menuCursor;
+          currentMessage = GREETINGS[greetingIdx];
+          currentMode = "message";
+          currentMenuState = STATE_NORMAL;
+        } else {
+          currentMenuState = MENU_MAIN;
+          menuCursor = 2; menuScroll = 0;
+          renderMenu();
+        }
+      }
+      else if (currentMenuState == MENU_SETTINGS) {
+        if (menuCursor == 0) {
+          autoSleepEnabled = !autoSleepEnabled;
+          renderMenu();
+        } else if (menuCursor == 1) {
+          wifiEnabled = !wifiEnabled;
+          if (wifiEnabled) { setupWiFi(); }
+          else { WiFi.disconnect(true); WiFi.mode(WIFI_OFF); }
+          renderMenu();
+        } else if (menuCursor == 2) {
+          doubleTapEnabled = !doubleTapEnabled;
+          renderMenu();
+        } else if (menuCursor == 3) {
+          currentMenuState = MENU_MAIN;
+          menuCursor = 3; menuScroll = 0;
+          renderMenu();
+        }
+      }
+    } else if (btn2Reading == HIGH) {
+      btn2Processed = false;
+    }
+  }
+  btn2LastState = btn2Reading;
+}
+
+// ==========================================
+// 💖 TOUCH SENSOR GESTURES (Single Tap, Double Tap & Long Press)
+// ==========================================
+void handleTouch() {
+  bool touch = (digitalRead(TOUCH_PIN) == HIGH);
+  unsigned long now = millis();
+
+  if (touch && !touchWasPressed) {
+    touchWasPressed = true;
+    touchPressStartTime = now;
+    lastActivityTime = now;
+    if (isSleeping) { wakeUp(); return; }
+  }
+  else if (!touch && touchWasPressed) {
+    touchWasPressed = false;
+    unsigned long pressDuration = now - touchPressStartTime;
+    lastActivityTime = now;
+
+    if (pressDuration > 1500) {
+      currentReaction = REACTION_SNOOZE;
+      currentMode = "sleepy";
+      reactionStartTime = now;
+      Serial.println(F("[Touch] Long press detected -> Snooze mode"));
+    } else {
+      if (doubleTapEnabled && (now - lastTouchReleaseTime < 380)) {
+        currentReaction = REACTION_BURST;
+        reactionStartTime = now;
+        lastTouchReleaseTime = 0;
+        Serial.println(F("[Touch] Double-tap detected -> Heart Explosion Burst!"));
+      } else {
+        lastTouchReleaseTime = now;
+        currentReaction = REACTION_LOVE;
+        reactionStartTime = now;
+        currentMode = "love";
+        Serial.println(F("[Touch] Single tap detected -> Love reaction"));
+      }
+    }
+  }
+}
+
+// ==========================================
+// ⚡ POWER MANAGEMENT (Auto-Sleep & Instant Wake)
 // ==========================================
 void goToSleep() {
-  if (isSleeping) return;
   isSleeping = true;
   display.clearDisplay();
   display.display();
   display.ssd1306_command(SSD1306_DISPLAYOFF);
-  Serial.println(F("[Power] Entering OLED Auto-Sleep... Touch/Button to wake."));
+  Serial.println(F("[Power] OLED Auto-Sleep active to conserve battery."));
 }
 
 void wakeUp() {
-  if (!isSleeping) return;
   isSleeping = false;
   display.ssd1306_command(SSD1306_DISPLAYON);
-  lastActivityMillis = millis();
+  lastActivityTime = millis();
   Serial.println(F("[Power] Woke up from sleep!"));
-
-  // Show happy greeting
-  display.clearDisplay();
-  drawHeart(64, 26, 12, true);
-  display.setTextSize(1);
-  display.setTextColor(SSD1306_WHITE);
-  display.setCursor(28, 48);
-  display.print(F("I Missed You!"));
-  display.display();
-  delay(600);
-
-  currentMode = MODE_FACE;
-  renderCurrent();
-}
-
-void updateWiFiState() {
-  if (wifiEnabled) {
-    if (strlen(HOME_WIFI_SSID) > 0) {
-      Serial.print(F("[WiFi] Connecting to: "));
-      Serial.println(HOME_WIFI_SSID);
-      WiFi.mode(WIFI_STA);
-      WiFi.begin(HOME_WIFI_SSID, HOME_WIFI_PASS);
-
-      display.clearDisplay();
-      display.setTextSize(1);
-      display.setTextColor(SSD1306_WHITE);
-      display.setCursor(16, 18);
-      display.print(F("Connecting Wi-Fi"));
-      display.setCursor(16, 32);
-      display.print(HOME_WIFI_SSID);
-      display.setCursor(16, 46);
-      display.display();
-
-      int retry = 0;
-      while (WiFi.status() != WL_CONNECTED && retry < 25) {
-        delay(300);
-        Serial.print(F("."));
-        display.print(F("."));
-        display.display();
-        retry++;
-      }
-      if (WiFi.status() == WL_CONNECTED) {
-        wifiIP = WiFi.localIP().toString();
-        Serial.print(F("\n[WiFi] Connected to Wi-Fi! IP: "));
-        Serial.println(wifiIP);
-      } else {
-        Serial.println(F("\n[WiFi] Wi-Fi connection timed out. Starting Hotspot AP..."));
-        WiFi.mode(WIFI_AP);
-        WiFi.softAP(AP_SSID, AP_PASS);
-        wifiIP = WiFi.softAPIP().toString();
-      }
-    } else {
-      Serial.println(F("[WiFi] Starting Hotspot AP: LittleReminder (192.168.4.1)..."));
-      WiFi.mode(WIFI_AP);
-      WiFi.softAP(AP_SSID, AP_PASS);
-      wifiIP = WiFi.softAPIP().toString();
-    }
-
-    // 1. Mobile Web App Dashboard
-    server.on("/", []() {
-      server.send(200, "text/html", R"rawliteral(<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Little Reminder Companion</title>
-  <style>
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #FFFDF9; color: #2D2638; margin: 0; padding: 20px; text-align: center; }
-    .card { background: white; border-radius: 24px; padding: 18px; margin-bottom: 16px; border: 1px solid #F0ECE4; box-shadow: 0 4px 15px rgba(0,0,0,0.03); }
-    h2 { margin: 6px 0 14px; font-size: 20px; color: #2D2638; }
-    h3 { margin: 0 0 10px; font-size: 14px; color: #7B6F88; text-transform: uppercase; letter-spacing: 0.5px; }
-    .btn-heart { background: linear-gradient(135deg, #FF6584, #FF8E9E); color: white; border: none; padding: 14px 28px; border-radius: 30px; font-size: 16px; font-weight: bold; cursor: pointer; box-shadow: 0 4px 12px rgba(255,101,132,0.3); width: 100%; transition: transform 0.1s; }
-    .btn-heart:active { transform: scale(0.97); }
-    .grid { display: grid; grid-cols: 2; grid-template-columns: repeat(2, 1fr); gap: 10px; margin-top: 10px; }
-    .btn-face { background: #FAF7F2; border: 1px solid #EBE4DA; border-radius: 16px; padding: 12px 8px; font-size: 14px; font-weight: 600; color: #4A3E56; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; }
-    .btn-face:active { background: #EFE8DC; }
-    input, textarea { width: 100%; padding: 12px; border: 1px solid #EBE4DA; border-radius: 14px; font-size: 14px; margin-bottom: 10px; background: #FAF7F2; font-family: inherit; }
-    textarea { font-family: monospace; font-size: 11px; height: 90px; resize: vertical; }
-    .btn-action { background: #5E5072; color: white; border: none; padding: 12px 20px; border-radius: 16px; font-size: 14px; font-weight: bold; width: 100%; cursor: pointer; }
-    .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #2D2638; color: white; padding: 10px 20px; border-radius: 20px; font-size: 13px; display: none; opacity: 0; transition: opacity 0.3s; }
-  </style>
-</head>
-<body>
-  <h2>🐾 Little Reminder</h2>
-  
-  <div class="card">
-    <button class="btn-heart" onclick="sendPat()">Send Love / Pat ♥</button>
-  </div>
-
-  <div class="card">
-    <h3>Switch Pet or Face</h3>
-    <div class="grid">
-      <button class="btn-face" onclick="setFace(0)">🐶 Puppy</button>
-      <button class="btn-face" onclick="setFace(1)">🦊 Fox</button>
-      <button class="btn-face" onclick="setFace(2)">🐱 Kitty</button>
-      <button class="btn-face" onclick="setFace(3)">🐼 Panda</button>
-      <button class="btn-face" onclick="setFace(4)">🐹 Hamster</button>
-      <button class="btn-face" onclick="setFace(5)">🐰 Bunny</button>
-      <button class="btn-face" onclick="setFace(6)">😊 Happy</button>
-      <button class="btn-face" onclick="setFace(7)">😉 Wink</button>
-      <button class="btn-face" onclick="setFace(8)">💕 Loving</button>
-      <button class="btn-face" onclick="setFace(9)">😴 Sleepy</button>
-    </div>
-  </div>
-
-  <div class="card">
-    <h3>Send Reminder to OLED</h3>
-    <input type="text" id="msgText" placeholder="e.g. You are loved today!">
-    <button class="btn-action" onclick="sendMsg()">Display Message</button>
-  </div>
-
-  <div class="card">
-    <h3>Add New Face (.INO Code)</h3>
-    <textarea id="inoCode" placeholder="Paste const uint8_t frame[1024] = { 0x.. } from oledanimationmaker.com here..."></textarea>
-    <button class="btn-action" onclick="uploadIno()">Upload Face to OLED</button>
-  </div>
-
-  <div id="toast" class="toast"></div>
-
-  <script>
-    function showToast(msg) {
-      const t = document.getElementById('toast');
-      t.innerText = msg;
-      t.style.display = 'block';
-      t.style.opacity = '1';
-      setTimeout(() => { t.style.opacity = '0'; setTimeout(() => t.style.display = 'none', 300); }, 1800);
-    }
-    function sendPat() {
-      fetch('/pat').then(() => showToast('♥ Sent Love Reaction!'));
-    }
-    function setFace(id) {
-      fetch('/setFace?id=' + id).then(() => showToast('Face Switched!'));
-    }
-    function sendMsg() {
-      const txt = document.getElementById('msgText').value.trim();
-      if (!txt) return;
-      fetch('/sendMsg?text=' + encodeURIComponent(txt)).then(() => showToast('Message Sent to OLED!'));
-    }
-    function uploadIno() {
-      const code = document.getElementById('inoCode').value;
-      if (!code) return;
-      showToast('Uploading bitmap...');
-      fetch('/uploadIno', { method: 'POST', body: code })
-        .then(r => r.text())
-        .then(res => showToast(res))
-        .catch(() => showToast('Upload failed!'));
-    }
-  </script>
-</body>
-</html>)rawliteral");
-    });
-
-    // 2. API Endpoints
-    server.on("/pat", []() {
-      triggerReaction(false);
-      server.send(200, "text/plain", "OK");
-    });
-
-    server.on("/setFace", []() {
-      if (server.hasArg("id")) {
-        currentFaceIndex = server.arg("id").toInt() % 10;
-        currentMode = MODE_FACE;
-        renderCurrent();
-        server.send(200, "text/plain", "OK");
-      } else {
-        server.send(400, "text/plain", "Missing id");
-      }
-    });
-
-    server.on("/sendMsg", []() {
-      if (server.hasArg("text")) {
-        currentMessageText = server.arg("text");
-        currentMode = MODE_MESSAGE;
-        renderCurrent();
-        server.send(200, "text/plain", "OK");
-      } else {
-        server.send(400, "text/plain", "Missing text");
-      }
-    });
-
-    server.on("/uploadIno", HTTP_POST, []() {
-      String body = server.arg("plain");
-      int byteIdx = 0;
-      int searchPos = 0;
-      while (byteIdx < 1024) {
-        int hexStart = body.indexOf("0x", searchPos);
-        int hexStartUpper = body.indexOf("0X", searchPos);
-        int pos = -1;
-        if (hexStart != -1 && hexStartUpper != -1) pos = min(hexStart, hexStartUpper);
-        else if (hexStart != -1) pos = hexStart;
-        else if (hexStartUpper != -1) pos = hexStartUpper;
-        if (pos == -1) break;
-
-        String hexByte = body.substring(pos, pos + 4);
-        customBitmap[byteIdx++] = (uint8_t)strtol(hexByte.c_str(), NULL, 16);
-        searchPos = pos + 2;
-      }
-
-      if (byteIdx == 1024) {
-        // Auto-polarity check: If >400 0xFFs, invert to crisp white on black
-        int ffCount = 0;
-        for (int i = 0; i < 1024; i++) if (customBitmap[i] == 0xFF) ffCount++;
-        if (ffCount > 400) {
-          for (int i = 0; i < 1024; i++) customBitmap[i] = ~customBitmap[i];
-        }
-        hasCustomBitmap = true;
-        currentFaceIndex = 10; // Custom bitmap index
-        currentMode = MODE_FACE;
-        renderCurrent();
-        server.send(200, "text/plain", "Custom Face Loaded on OLED!");
-      } else {
-        server.send(400, "text/plain", "Need 1024 bytes (found " + String(byteIdx) + ")");
-      }
-    });
-
-    server.begin();
-  } else {
-    Serial.println(F("[WiFi] Turning OFF Wi-Fi to maximize battery..."));
-    server.stop();
-    WiFi.softAPdisconnect(true);
-    WiFi.mode(WIFI_OFF);
-  }
 }
 
 // ==========================================
-// 🔘 HARDWARE BUTTON & TOUCH HANDLERS
+// 🔌 USB-C OTG SERIAL PROTOCOL
 // ==========================================
-void handleButtons() {
-  // Read buttons (Active LOW with internal pullups)
-  bool btn1 = (digitalRead(BTN1_PIN) == LOW);
-  bool btn2 = (digitalRead(BTN2_PIN) == LOW);
+void handleSerial() {
+  while (Serial.available()) {
+    String line = Serial.readStringUntil('\n');
+    line.trim();
+    if (line.length() == 0) continue;
 
-  if (btn1 || btn2) {
-    if (isSleeping) {
-      wakeUp();
-      delay(250);
-      return;
+    lastActivityTime = millis();
+    if (isSleeping) wakeUp();
+
+    if (line.startsWith("mode:")) {
+      currentMode = line.substring(5);
+      frameIdx = 0;
+      Serial.println(F("OK:MODE_SET"));
     }
-    lastActivityMillis = millis();
-  }
-
-  // Button 1: Face Cycle / Menu Down
-  static bool btn1Last = false;
-  if (btn1 && !btn1Last) {
-    delay(40); // Debounce
-    if (currentMode == MODE_MENU) {
-      // Menu cursor down
-      uint8_t maxItems = 5;
-      if (currentMenuLevel == MENU_SETTINGS) maxItems = 4;
-      else if (currentMenuLevel == MENU_PETS) maxItems = 7;
-      else if (currentMenuLevel == MENU_EXPR) maxItems = 5;
-
-      menuCursor = (menuCursor + 1) % maxItems;
-      if (menuCursor >= 4) menuScroll = menuCursor - 3;
-      else menuScroll = 0;
-      renderMenu();
-    } else {
-      // Cycle next face
-      currentFaceIndex = (currentFaceIndex + 1) % TOTAL_FACES;
-      currentMode = MODE_FACE;
-      renderCurrent();
-    }
-  }
-  btn1Last = btn1;
-
-  // Button 2: Menu Open / Select / Enter
-  static bool btn2Last = false;
-  if (btn2 && !btn2Last) {
-    delay(40); // Debounce
-    if (currentMode != MODE_MENU) {
-      currentMode = MODE_MENU;
-      currentMenuLevel = MENU_MAIN;
-      menuCursor = 0;
-      menuScroll = 0;
-      renderMenu();
-    } else {
-      // In menu: Select item
-      if (currentMenuLevel == MENU_MAIN) {
-        if (menuCursor == 0) { currentMenuLevel = MENU_PETS; menuCursor = 0; }
-        else if (menuCursor == 1) { currentMenuLevel = MENU_EXPR; menuCursor = 0; }
-        else if (menuCursor == 2) { currentMode = MODE_MESSAGE; renderCurrent(); }
-        else if (menuCursor == 3) { currentMenuLevel = MENU_SETTINGS; menuCursor = 0; }
-        else if (menuCursor == 4) { currentMode = MODE_FACE; renderCurrent(); }
-      } else if (currentMenuLevel == MENU_SETTINGS) {
-        if (menuCursor == 0) {
-          autoSleepEnabled = !autoSleepEnabled; // TOGGLE AUTO SLEEP!
-        } else if (menuCursor == 1) {
-          wifiEnabled = !wifiEnabled;           // TOGGLE WI-FI!
-          updateWiFiState();
-        } else if (menuCursor == 2) {
-          doubleTapEnabled = !doubleTapEnabled; // TOGGLE DOUBLE TAP!
-        } else if (menuCursor == 3) {
-          currentMenuLevel = MENU_MAIN;
-          menuCursor = 3;
-        }
-      } else if (currentMenuLevel == MENU_PETS) {
-        if (menuCursor < 6) {
-          currentFaceIndex = menuCursor;
-          currentMode = MODE_FACE;
-        } else {
-          currentMenuLevel = MENU_MAIN;
-          menuCursor = 0;
-        }
-      } else if (currentMenuLevel == MENU_EXPR) {
-        if (menuCursor < 4) {
-          currentFaceIndex = 6 + menuCursor;
-          currentMode = MODE_FACE;
-        } else {
-          currentMenuLevel = MENU_MAIN;
-          menuCursor = 1;
-        }
+    else if (line.startsWith("face:")) {
+      String param = line.substring(5);
+      if (param.toInt() >= 0 && param.toInt() < TOTAL_MODES && (param != "0" || line == "face:0")) {
+        modeIdx = param.toInt();
+        currentMode = ALL_MODES[modeIdx];
+      } else {
+        currentMode = param;
       }
-
-      if (currentMode == MODE_MENU) renderMenu();
-      else renderCurrent();
-    }
-  }
-  btn2Last = btn2;
-}
-
-void triggerReaction(bool isDoubleTap) {
-  currentMode = isDoubleTap ? MODE_DOUBLE_TAP : MODE_REACTION;
-  reactionStartMillis = millis();
-  reactionDurationMs = isDoubleTap ? 3200 : 2500;
-  animTick = 0;
-  renderReactionFrame();
-}
-
-void handleTouchGestures() {
-  bool isTouched = (digitalRead(TOUCH_PIN) == HIGH);
-  uint32_t now = millis();
-
-  if (isTouched) {
-    if (isSleeping) {
-      wakeUp();
-      delay(300);
-      return;
-    }
-    lastActivityMillis = now;
-
-    if (!touchWasPressed) {
-      touchWasPressed = true;
-      touchDownTime = now;
-    } else {
-      // Long press check (> 1400ms)
-      if (now - touchDownTime > 1400 && currentMode != MODE_MENU) {
-        // Long press -> Cozy purr snooze
-        currentFaceIndex = 9; // Sleepy
-        triggerReaction(false);
-        touchWasPressed = false;
-        tapCount = 0;
-        return;
-      }
-    }
-  } else {
-    // Touch released
-    if (touchWasPressed) {
-      touchWasPressed = false;
-      uint32_t pressDuration = now - touchDownTime;
-
-      if (pressDuration < 500) {
-        tapCount++;
-        lastTapReleaseTime = now;
-      }
-    }
-  }
-
-  // Double tap vs Single tap resolution
-  if (tapCount > 0 && (now - lastTapReleaseTime > 320)) {
-    if (tapCount >= 2 && doubleTapEnabled) {
-      Serial.println(F("[Touch] DOUBLE-TAP Detected! Triggering Heart Explosion!"));
-      triggerReaction(true);
-    } else {
-      Serial.println(F("[Touch] Single Tap Detected. Triggering Face Reaction!"));
-      triggerReaction(false);
-    }
-    tapCount = 0;
-  }
-}
-
-// ==========================================
-// 🔌 USB-C OTG SERIAL COMMAND HANDLER
-// ==========================================
-void handleSerialCommand(String cmd) {
-  cmd.trim();
-  if (cmd.length() == 0) return;
-  lastActivityMillis = millis();
-  if (isSleeping) wakeUp();
-
-  if (cmd.startsWith("face:")) {
-    String arg = cmd.substring(5);
-    arg.trim();
-    int idx = arg.toInt();
-    if (idx >= 0 && idx < 10) {
-      currentFaceIndex = idx;
-      currentMode = MODE_FACE;
-      renderCurrent();
+      frameIdx = 0;
       Serial.println(F("OK:FACE_SET"));
     }
-  } else if (cmd.startsWith("msg:")) {
-    currentMessageText = cmd.substring(4);
-    currentMode = MODE_MESSAGE;
-    renderCurrent();
-    Serial.println(F("OK:MSG_SET"));
-  } else if (cmd == "pat" || cmd == "react") {
-    triggerReaction(false);
-    Serial.println(F("OK:PAT"));
-  } else if (cmd == "doubletap" || cmd == "love") {
-    triggerReaction(true);
-    Serial.println(F("OK:DOUBLETAP"));
-  } else if (cmd.startsWith("bitmap:")) {
-    String hexData = cmd.substring(7);
-    int byteIdx = 0;
-    int searchPos = 0;
-    while (byteIdx < 1024) {
-      int hexStart = hexData.indexOf("0x", searchPos);
-      if (hexStart == -1) hexStart = hexData.indexOf("0X", searchPos);
-      if (hexStart == -1) break;
-      String byteStr = hexData.substring(hexStart, hexStart + 4);
-      customBitmap[byteIdx++] = (uint8_t)strtol(byteStr.c_str(), NULL, 16);
-      searchPos = hexStart + 2;
+    else if (line.startsWith("msg:")) {
+      currentMessage = line.substring(4);
+      currentMode = "message";
+      Serial.println(F("OK:MSG_SET"));
     }
-    if (byteIdx == 1024) {
-      int ffCount = 0;
-      for (int i = 0; i < 1024; i++) if (customBitmap[i] == 0xFF) ffCount++;
-      if (ffCount > 400) {
-        for (int i = 0; i < 1024; i++) customBitmap[i] = ~customBitmap[i];
-      }
-      hasCustomBitmap = true;
-      currentFaceIndex = 10;
-      currentMode = MODE_FACE;
-      renderCurrent();
-      Serial.println(F("OK:BITMAP_LOADED"));
-    } else {
-      Serial.println(F("ERR:NEED_1024_BYTES"));
+    else if (line == "pat") {
+      currentReaction = REACTION_LOVE;
+      reactionStartTime = millis();
+      currentMode = "love";
+      Serial.println(F("OK:PAT"));
     }
-  } else if (cmd == "status") {
-    Serial.print(F("STATUS:face="));
-    Serial.print(currentFaceIndex);
-    Serial.print(F(",wifi="));
-    Serial.println(wifiEnabled ? "on" : "off");
+    else if (line == "doubletap") {
+      currentReaction = REACTION_BURST;
+      reactionStartTime = millis();
+      Serial.println(F("OK:DOUBLETAP"));
+    }
+    else if (line == "status") {
+      Serial.print(F("STATUS:name=CottonKitty,mode="));
+      Serial.print(currentMode);
+      Serial.print(F(",ip="));
+      Serial.print(wifiIP);
+      Serial.print(F(",wifi="));
+      Serial.println(wifiEnabled ? "on" : "off");
+    }
+    else {
+      Serial.println(F("ERR:UNKNOWN_CMD"));
+    }
   }
-}
-
-void renderCurrent() {
-  display.clearDisplay();
-  if (currentMode == MODE_FACE) {
-    renderFaceByIndex(currentFaceIndex, 0);
-  } else if (currentMode == MODE_MESSAGE) {
-    renderWrappedMessage(currentMessageText);
-    return;
-  }
-  display.display();
 }
 
 // ==========================================
-// 🚀 ARDUINO SETUP & LOOP
+// 📶 WI-FI & WEB SERVER ROUTES
+// ==========================================
+void sendApp() {
+  server.send_P(200, "text/html; charset=utf-8", APP_HTML);
+}
+
+void sendStatus() {
+  String json = String(R"({"name":"CottonKitty","connected":true,"mode":")") + currentMode + String(R"(","ip":")") + wifiIP + String(R"("})");
+  server.send(200, "application/json", json);
+}
+
+void modeRoute() {
+  if (server.hasArg("name")) {
+    currentMode = server.arg("name");
+    frameIdx = 0;
+    lastActivityTime = millis();
+    if (isSleeping) wakeUp();
+  }
+  server.send(200, "application/json", R"({"ok":true})");
+}
+
+void messageRoute() {
+  if (server.hasArg("text")) {
+    currentMessage = server.arg("text");
+    currentMode = "message";
+    lastActivityTime = millis();
+    if (isSleeping) wakeUp();
+  }
+  server.send(200, "application/json", R"({"ok":true})");
+}
+void setupWiFi() {
+  WiFi.mode(WIFI_STA);
+  Serial.print(F("[WiFi] Connecting to: "));
+  Serial.println(HOME_WIFI_SSID);
+
+  WiFi.begin(HOME_WIFI_SSID, HOME_WIFI_PASS);
+  unsigned long startAttempt = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - startAttempt < 7000) {
+    delay(200);
+    Serial.print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    wifiIP = WiFi.localIP().toString();
+    Serial.println(); Serial.print(F("[WiFi] Connected to Home Wi-Fi! IP: "));
+    Serial.println(wifiIP);
+  } else {
+    Serial.println(); Serial.println(F("[WiFi] Starting SoftAP CottonKitty (192.168.4.1)... "));
+    WiFi.mode(WIFI_AP);
+    WiFi.softAP(AP_SSID, AP_PASS);
+    wifiIP = WiFi.softAPIP().toString();
+    Serial.print(F("[WiFi] AP IP: "));
+    Serial.println(wifiIP);
+  }
+
+  server.on("/", sendApp);
+  server.on("/api/status", sendStatus);
+  server.on("/api/mode", modeRoute);
+  server.on("/api/message", messageRoute);
+  server.begin();
+  Serial.println(F("[WiFi] HTTP WebServer started on port 80."));
+}
+
+// ==========================================
+// 🚀 SETUP
 // ==========================================
 void setup() {
   Serial.begin(115200);
-  delay(100);
-  Serial.println(F("\n=== Little Reminder Companion (Option B) ==="));
+  delay(200);
+  Serial.println(); Serial.println(F("============================================"));
+  Serial.println(F("🐾 CottonKitty & Little Reminder Unified FW 🐾"));
+  Serial.println(F("============================================"));
 
-  // Configure hardware pins
+  // Pins Setup
   pinMode(BTN1_PIN, INPUT_PULLUP);
   pinMode(BTN2_PIN, INPUT_PULLUP);
   pinMode(TOUCH_PIN, INPUT_PULLDOWN);
 
-  // Initialize I2C OLED with custom SDA & SCL
+  // OLED Initialization
   Wire.begin(OLED_SDA, OLED_SCL);
   if (!display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR)) {
-    Serial.println(F("[Error] SSD1306 allocation failed. Check wiring!"));
-    while (1) delay(100);
+    Serial.println(F("[Error] SSD1306 OLED init failed! Check SDA=GPIO5, SCL=GPIO6"));
+    while (true) delay(1000);
   }
 
   display.clearDisplay();
-
-  // Splash Screen
-  drawHeart(64, 18, 14, true);
-  display.setTextSize(1);
   display.setTextColor(SSD1306_WHITE);
-  display.setCursor(22, 38);
-  display.print(F("Little Reminder"));
-  display.setCursor(24, 50);
-  display.print(F("Battery Pet v2"));
+  display.setTextSize(1);
+  display.setCursor(18, 12);
+  display.println(F("CottonKitty &"));
+  display.setCursor(18, 24);
+  display.println(F("Little Reminder"));
+  display.setCursor(18, 42);
+  display.println(F("Starting..."));
+  heart(108, 18, 3);
+  star(10, 18);
   display.display();
-  delay(1000);
+  delay(1200);
 
-  // Start Wi-Fi and show connection details on OLED
-  if (wifiEnabled) {
-    updateWiFiState();
+  // Setup Wi-Fi and Web Server
+  setupWiFi();
 
-    display.clearDisplay();
-    drawHeart(64, 12, 10, true);
-    display.setTextSize(1);
-    display.setTextColor(SSD1306_WHITE);
-    display.setCursor(24, 28);
-    display.print(F("Wi-Fi Ready!"));
-    display.setCursor(6, 42);
-    display.print(strlen(HOME_WIFI_SSID) > 0 ? "Net: " + String(HOME_WIFI_SSID) : "Wi-Fi: LittleReminder");
-    display.setCursor(6, 54);
-    display.print("http://" + wifiIP);
-    display.display();
-    delay(2200);
-  }
-
-  lastActivityMillis = millis();
-  renderCurrent();
+  lastActivityTime = millis();
+  Serial.println(F("[Setup] Initialization complete! Enjoy your companion."));
 }
 
+// ==========================================
+// 🔄 MAIN LOOP
+// ==========================================
 void loop() {
-  uint32_t now = millis();
-
-  // 1. Handle USB-C OTG Cable Serial Commands
-  if (Serial.available()) {
-    String cmd = Serial.readStringUntil('\n');
-    handleSerialCommand(cmd);
-  }
-
-  // 2. Handle hardware buttons & touch sensor
-  handleButtons();
-  handleTouchGestures();
-
-  // 2. Wi-Fi client handling (if enabled)
+  // 1. Handle Wi-Fi Client Requests
   if (wifiEnabled) {
     server.handleClient();
   }
 
-  // 3. Reaction animation loop
-  if (currentMode == MODE_REACTION || currentMode == MODE_DOUBLE_TAP) {
-    if (now - reactionStartMillis > reactionDurationMs) {
-      currentMode = MODE_FACE;
-      renderCurrent();
-    } else {
-      if (now - lastAnimTickMillis >= 60) {
-        lastAnimTickMillis = now;
-        animTick++;
-        renderReactionFrame();
-      }
-    }
-    return;
-  }
+  // 2. Handle USB-C OTG Serial Commands
+  handleSerial();
 
-  // 4. Auto-Sleep Battery Saver
-  if (autoSleepEnabled && !isSleeping && currentMode != MODE_MENU) {
-    if (now - lastActivityMillis > sleepTimeoutMs) {
+  // 3. Handle Hardware Buttons (BTN1: GPIO 9, BTN2: GPIO 1)
+  handleButtons();
+
+  // 4. Handle Touch Sensor Gestures
+  handleTouch();
+
+  // 5. Auto-Sleep Battery Management
+  if (autoSleepEnabled && !isSleeping) {
+    if (millis() - lastActivityTime > AUTO_SLEEP_TIMEOUT) {
       goToSleep();
     }
   }
 
-  delay(15);
+  // 6. OLED Frame Render
+  if (!isSleeping) {
+    if (currentMenuState == STATE_NORMAL) {
+      drawMode();
+    } else {
+      renderMenu();
+    }
+  }
+
+  delay(12);
 }

@@ -1,309 +1,314 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Little Reminder — OTG & Wi-Fi Companion</title>
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🐾</text></svg>">
-  <style>
-    * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #FFFDF9; color: #2D2638; margin: 0; padding: 20px 14px 60px; max-width: 520px; margin: auto; }
-    header { text-align: center; margin-bottom: 20px; }
-    .logo { font-size: 36px; margin-bottom: 4px; }
-    h1 { font-size: 22px; margin: 0; color: #2D2638; font-weight: 800; }
-    p.subtitle { color: #8F829D; font-size: 13px; margin: 4px 0 0; }
-    .card { background: white; border-radius: 24px; padding: 18px; margin-bottom: 16px; border: 1px solid #F0ECE4; box-shadow: 0 4px 18px rgba(0,0,0,0.03); }
-    h2 { font-size: 14px; text-transform: uppercase; letter-spacing: 0.6px; color: #8F829D; margin: 0 0 12px; }
-    
-    /* Connection Bar */
-    .tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; background: #FAF7F2; padding: 4px; border-radius: 16px; margin-bottom: 14px; border: 1px solid #EBE4DA; }
-    .tab { border: none; background: transparent; padding: 8px 12px; border-radius: 12px; font-size: 12px; font-weight: 700; color: #8F829D; cursor: pointer; transition: all 0.2s; }
-    .tab.active { background: white; color: #2D2638; box-shadow: 0 2px 8px rgba(0,0,0,0.06); }
-    
-    .btn-conn { background: #5E5072; color: white; border: none; border-radius: 16px; padding: 12px 18px; font-size: 13px; font-weight: 700; width: 100%; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 8px; transition: opacity 0.2s; }
-    .btn-conn:active { opacity: 0.85; }
-    .status-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; font-weight: 700; padding: 4px 10px; border-radius: 20px; margin-top: 10px; background: #FAF7F2; color: #8F829D; border: 1px solid #EBE4DA; }
-    .status-badge.connected { background: #E8F8F0; color: #1E8E5A; border-color: #BBEBD1; }
-    .dot { width: 6px; height: 6px; border-radius: 50%; background: #8F829D; }
-    .status-badge.connected .dot { background: #1E8E5A; }
-
-    /* Heart / Reaction Button */
-    .btn-heart { background: linear-gradient(135deg, #FF6584, #FF8E9E); color: white; border: none; padding: 16px; border-radius: 24px; font-size: 16px; font-weight: 800; cursor: pointer; box-shadow: 0 4px 14px rgba(255,101,132,0.35); width: 100%; display: flex; align-items: center; justify-content: center; gap: 8px; transition: transform 0.1s; }
-    .btn-heart:active { transform: scale(0.97); }
-
-    /* Faces Grid */
-    .faces-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px; }
-    .btn-face { background: #FAF7F2; border: 1px solid #EBE4DA; border-radius: 18px; padding: 12px 10px; font-size: 14px; font-weight: 600; color: #4A3E56; cursor: pointer; display: flex; align-items: center; gap: 10px; transition: all 0.15s; }
-    .btn-face:active { background: #EFE8DC; transform: scale(0.97); }
-    .btn-face span { font-size: 22px; }
-
-    /* Inputs */
-    input, textarea { width: 100%; padding: 12px 14px; border: 1px solid #EBE4DA; border-radius: 16px; font-size: 14px; background: #FAF7F2; color: #2D2638; font-family: inherit; margin-bottom: 10px; }
-    input:focus, textarea:focus { outline: none; border-color: #FF8E9E; background: white; }
-    textarea { font-family: monospace; font-size: 11px; height: 95px; resize: vertical; }
-
-    .btn-action { background: #2D2638; color: white; border: none; padding: 12px 20px; border-radius: 16px; font-size: 13px; font-weight: 700; width: 100%; cursor: pointer; transition: opacity 0.15s; }
-    .btn-action:active { opacity: 0.85; }
-
-    /* OLED Canvas Preview */
-    .canvas-wrap { background: #0A080E; padding: 8px; border-radius: 16px; border: 1px solid #2D2638; margin-bottom: 12px; display: flex; justify-content: center; }
-    canvas { width: 100%; aspect-ratio: 2/1; image-rendering: pixelated; }
-
-    .toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: #2D2638; color: white; padding: 10px 22px; border-radius: 20px; font-size: 13px; font-weight: 600; display: none; opacity: 0; transition: opacity 0.3s; z-index: 1000; box-shadow: 0 4px 16px rgba(0,0,0,0.2); }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CottonKitty & Little Reminder</title>
+<style>
+:root{font-family:system-ui,-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#252632;background:#f8f8fc}
+*{box-sizing:border-box}
+body{margin:0}
+main{max-width:960px;margin:auto;padding:20px 16px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:20px}
+.logo{background:#ffe8f1;border-radius:18px;padding:12px 16px;font-size:28px}
+h1{font-size:24px;margin:0}
+p{color:#727582;margin:4px 0}
+.layout{display:grid;grid-template-columns:1fr 1.3fr;gap:18px}
+.card{background:white;border:1px solid #e8e8f0;border-radius:20px;padding:18px;margin-bottom:16px;box-shadow:0 2px 8px rgba(0,0,0,0.03)}
+h2{font-size:17px;margin:0 0 12px;display:flex;align-items:center;gap:8px}
+button,input,textarea{font:inherit;border-radius:12px;padding:11px;border:1px solid #e5e5ed}
+button{cursor:pointer;background:#292a35;color:white;border:0;font-weight:500;transition:transform 0.1s,background 0.2s}
+button:active{transform:scale(0.97)}
+button.alt{background:#f1eff7;color:#292a35}
+button.pink{background:#f6c2d7;color:#34232b}
+button.usb{background:#4f46e5;color:white}
+button.usb.connected{background:#059669}
+input,textarea{width:100%}
+.row{display:flex;gap:8px;margin:8px 0}
+.row>*{flex:1}
+.status{font-size:13px;color:#747582;margin-top:10px;padding:8px 12px;background:#f9f9fc;border-radius:10px}
+.preview{background:#08090d;color:#00ffcc;border-radius:16px;padding:24px 15px;text-align:center;margin-bottom:12px;min-height:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;box-shadow:inset 0 0 15px rgba(0,255,204,0.15)}
+.big{font-size:36px;font-family:monospace;letter-spacing:1px}
+.label{font-size:14px;color:#8be9fd;margin-top:8px}
+.gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.gallery button{background:#fff;color:#292a35;border:1px solid #e8e8f0;text-align:left;padding:12px;min-height:56px;display:flex;align-items:center;gap:10px}
+.gallery button.active{background:#fff0f6;border-color:#e99cba}
+.faces{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}
+.face{background:#fff;color:#292a35;border:1px solid #e8e8f0;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 4px;min-height:76px}
+.face span{font-size:22px}
+.face small{font-size:11px;color:#727582}
+.face.active{background:#fff0f6;border:1px solid #e99cba}
+.small{font-size:12px;color:#8a8c99}
+@media(max-width:680px){
+  .layout{grid-template-columns:1fr}
+  .faces{grid-template-columns:repeat(3,1fr)}
+  .gallery{grid-template-columns:1fr}
+}
+</style>
 </head>
 <body>
-  <header>
-    <div class="logo">🐾</div>
-    <h1>Little Reminder</h1>
-    <p class="subtitle">USB-C OTG & Wi-Fi Companion</p>
-  </header>
-
-  <!-- Connection Card -->
-  <div class="card">
-    <h2>1. Connection Mode</h2>
-    <div class="tabs">
-      <button class="tab active" id="tabOtg" onclick="switchTab('otg')">🔌 USB-C OTG Cable</button>
-      <button class="tab" id="tabWifi" onclick="switchTab('wifi')">📶 Wi-Fi Network</button>
-    </div>
-
-    <!-- OTG View -->
-    <div id="viewOtg">
-      <p style="font-size:12px;color:#8F829D;margin:0 0 12px;">Plug your ESP32-C3 directly into your phone or PC with a USB-C OTG cable.</p>
-      <button class="btn-conn" onclick="connectOtg()">🔌 Connect USB-C OTG Cable</button>
-    </div>
-
-    <!-- Wi-Fi View -->
-    <div id="viewWifi" style="display:none;">
-      <p style="font-size:12px;color:#8F829D;margin:0 0 10px;">Connect to <b>ESP</b> or <b>LittleReminder</b> Wi-Fi, then enter the IP:</p>
-      <input type="text" id="wifiIp" value="192.168.4.1" placeholder="e.g. 192.168.4.1 or your IP">
-      <button class="btn-conn" onclick="testWifi()">📶 Connect via Wi-Fi</button>
-    </div>
-
-    <div id="statusBadge" class="status-badge">
-      <div class="dot"></div>
-      <span id="statusText">Not connected yet</span>
-    </div>
+<main>
+<header>
+  <div class="logo">♡</div>
+  <div>
+    <h1>CottonKitty & Little Reminder</h1>
+    <p>Your tiny animated companion with OLED Menu & OTG Web Serial</p>
   </div>
+</header>
 
-  <!-- Send Love Button -->
-  <div class="card">
-    <button class="btn-heart" onclick="sendPat()">
-      <span>♥</span> Send Pet / Heart Reaction
-    </button>
-  </div>
-
-  <!-- Faces Selector -->
-  <div class="card">
-    <h2>2. Choose Pet Face</h2>
-    <div class="faces-grid">
-      <button class="btn-face" onclick="setFace(0)"><span>🐶</span> Puppy</button>
-      <button class="btn-face" onclick="setFace(1)"><span>🦊</span> Cozy Fox</button>
-      <button class="btn-face" onclick="setFace(2)"><span>🐱</span> Kitty</button>
-      <button class="btn-face" onclick="setFace(3)"><span>🐼</span> Panda</button>
-      <button class="btn-face" onclick="setFace(4)"><span>🐹</span> Hamster</button>
-      <button class="btn-face" onclick="setFace(5)"><span>🐰</span> Bunny</button>
-      <button class="btn-face" onclick="setFace(6)"><span>😊</span> Happy</button>
-      <button class="btn-face" onclick="setFace(7)"><span>😉</span> Wink</button>
-      <button class="btn-face" onclick="setFace(8)"><span>💕</span> Loving</button>
-      <button class="btn-face" onclick="setFace(9)"><span>😴</span> Sleepy</button>
-    </div>
-  </div>
-
-  <!-- Send Message -->
-  <div class="card">
-    <h2>3. Send Message to OLED</h2>
-    <input type="text" id="msgInput" placeholder="e.g. You are loved today!">
-    <button class="btn-action" onclick="sendMsg()">Display on OLED Screen</button>
-  </div>
-
-  <!-- Add New Face -->
-  <div class="card">
-    <h2>4. Add New Face (.INO Code)</h2>
-    <p style="font-size:12px;color:#8F829D;margin:0 0 10px;">Paste code from <a href="https://oledanimationmaker.com" target="_blank" style="color:#FF6584;font-weight:700;">oledanimationmaker.com</a>:</p>
-    <textarea id="inoInput" placeholder="const uint8_t PROGMEM frame[1024] = { 0x00, ... };" oninput="previewIno()"></textarea>
-    
-    <div class="canvas-wrap">
-      <canvas id="previewCanvas" width="128" height="64"></canvas>
-    </div>
-    
-    <button class="btn-action" onclick="uploadIno()">Upload Face to OLED</button>
-  </div>
-
-  <div id="toast" class="toast"></div>
-
-  <script>
-    let activeMode = 'otg';
-    let serialPort = null;
-    let serialWriter = null;
-    let serialReader = null;
-    let parsedBytes = null;
-
-    function showToast(text) {
-      const t = document.getElementById('toast');
-      t.innerText = text;
-      t.style.display = 'block';
-      t.style.opacity = '1';
-      setTimeout(() => {
-        t.style.opacity = '0';
-        setTimeout(() => t.style.display = 'none', 300);
-      }, 2000);
-    }
-
-    function switchTab(mode) {
-      activeMode = mode;
-      document.getElementById('tabOtg').classList.toggle('active', mode === 'otg');
-      document.getElementById('tabWifi').classList.toggle('active', mode === 'wifi');
-      document.getElementById('viewOtg').style.display = mode === 'otg' ? 'block' : 'none';
-      document.getElementById('viewWifi').style.display = mode === 'wifi' ? 'block' : 'none';
-    }
-
-    function setStatus(connected, text) {
-      const b = document.getElementById('statusBadge');
-      b.classList.toggle('connected', connected);
-      document.getElementById('statusText').innerText = text;
-    }
-
-    // --- 🔌 USB-C OTG Serial (Web Serial API) ---
-    async function connectOtg() {
-      if (!('serial' in navigator)) {
-        alert('Web Serial is not supported in this browser! Please use Google Chrome on Android or Mac/PC.');
-        return;
-      }
-      try {
-        serialPort = await navigator.serial.requestPort();
-        await serialPort.open({ baudRate: 115200 });
-        const textEncoder = new TextEncoderStream();
-        textEncoder.readable.pipeTo(serialPort.writable);
-        serialWriter = textEncoder.writable.getWriter();
-        setStatus(true, 'Connected via USB-C OTG Cable!');
-        showToast('Connected via OTG Cable!');
-      } catch (err) {
-        console.error(err);
-        setStatus(false, 'OTG Connection Failed: ' + err.message);
-      }
-    }
-
-    async function sendOtgCommand(cmd) {
-      if (!serialWriter) {
-        showToast('Please tap \"Connect USB-C OTG Cable\" first!');
-        return false;
-      }
-      try {
-        await serialWriter.write(cmd + '\n');
-        return true;
-      } catch (e) {
-        setStatus(false, 'OTG Disconnected');
-        showToast('OTG write failed!');
-        return false;
-      }
-    }
-
-    // --- 📶 Wi-Fi HTTP ---
-    function getWifiBase() {
-      let ip = document.getElementById('wifiIp').value.trim();
-      if (!ip.startsWith('http')) ip = 'http://' + ip;
-      return ip.replace(/\/$/, '');
-    }
-
-    async function testWifi() {
-      try {
-        const res = await fetch(getWifiBase() + '/pat');
-        if (res.ok) {
-          setStatus(true, 'Connected via Wi-Fi!');
-          showToast('Wi-Fi Connected!');
-        } else throw 0;
-      } catch (e) {
-        setStatus(false, 'Wi-Fi Connection Failed');
-        showToast('Could not reach IP. Check Wi-Fi!');
-      }
-    }
-
-    // --- ACTIONS ---
-    async function sendPat() {
-      if (activeMode === 'otg' && serialWriter) {
-        await sendOtgCommand('pat');
-        showToast('♥ Sent Love via OTG Cable!');
-      } else {
-        fetch(getWifiBase() + '/pat').then(() => showToast('♥ Sent Love via Wi-Fi!'));
-      }
-    }
-
-    async function setFace(id) {
-      if (activeMode === 'otg' && serialWriter) {
-        await sendOtgCommand('face:' + id);
-        showToast('Face Switched via OTG!');
-      } else {
-        fetch(getWifiBase() + '/setFace?id=' + id).then(() => showToast('Face Switched!'));
-      }
-    }
-
-    async function sendMsg() {
-      const txt = document.getElementById('msgInput').value.trim();
-      if (!txt) return;
-      if (activeMode === 'otg' && serialWriter) {
-        await sendOtgCommand('msg:' + txt);
-        showToast('Message Sent via OTG!');
-      } else {
-        fetch(getWifiBase() + '/sendMsg?text=' + encodeURIComponent(txt)).then(() => showToast('Message Sent!'));
-      }
-    }
-
-    // --- .INO PARSER & CANVAS PREVIEW ---
-    function previewIno() {
-      const text = document.getElementById('inoInput').value;
-      const hexMatches = text.match(/0x[0-9a-fA-F]{1,2}/g);
-      if (!hexMatches || hexMatches.length < 1024) return;
+<div class="layout">
+  <section>
+    <!-- Connection Options -->
+    <div class="card">
+      <h2>🔌 Connect to Companion</h2>
+      <p>Choose <b>USB-C OTG Cable</b> (fastest, zero Wi-Fi needed) or <b>Wi-Fi</b>:</p>
       
-      let bytes = hexMatches.slice(0, 1024).map(h => parseInt(h, 16));
-      
-      // Auto-polarity check: If >400 0xFFs, invert to crisp white lines
-      const ffCount = bytes.filter(b => b === 0xFF).length;
-      if (ffCount > 400) {
-        bytes = bytes.map(b => (~b) & 0xFF);
-      }
-      parsedBytes = bytes;
+      <div style="margin:10px 0">
+        <button id="usbBtn" class="usb" style="width:100%" onclick="toggleUSB()">⚡ Connect USB-C OTG Cable</button>
+      </div>
 
-      // Draw onto 128x64 canvas
-      const cvs = document.getElementById('previewCanvas');
-      const ctx = cvs.getContext('2d');
-      ctx.fillStyle = '#0A080E';
-      ctx.fillRect(0, 0, 128, 64);
-      ctx.fillStyle = '#DDF4FF';
+      <div class="row">
+        <input id="host" value="http://192.168.4.1">
+        <button onclick="connectWiFi()">Wi-Fi Connect</button>
+      </div>
+      <div id="status" class="status">Ready to connect via USB-C or Wi-Fi</div>
+    </div>
 
-      for (let y = 0; y < 64; y++) {
-        const row = y * 16;
-        for (let b = 0; b < 16; b++) {
-          const byteVal = bytes[row + b];
-          if (byteVal === 0) continue;
-          for (let bit = 7; bit >= 0; bit--) {
-            if ((byteVal >> bit) & 1) {
-              ctx.fillRect(b * 8 + (7 - bit), y, 1, 1);
-            }
-          }
-        }
-      }
+    <!-- Send a Message -->
+    <div class="card">
+      <h2>💌 Send a Message to OLED</h2>
+      <textarea id="msg" maxlength="120" rows="2" placeholder="You make ordinary days feel special..."></textarea>
+      <div class="row">
+        <button class="pink" onclick="sendMsg()">Send to OLED</button>
+        <button class="alt" onclick="presetMsg('You matter. ♡')">You matter ♡</button>
+      </div>
+      <div class="row">
+        <button class="alt" onclick="presetMsg('Keep shining! ✨')">Keep shining ✨</button>
+        <button class="alt" onclick="presetMsg('A little hug for you! 🐾')">Hug 🐾</button>
+      </div>
+    </div>
+
+    <!-- 8 Original Drawings/Animations Gallery -->
+    <div class="card">
+      <h2>🖼️ Original Drawings Gallery</h2>
+      <p>Multi-frame animations & full-screen drawings from CottonKitty.</p>
+      <div class="gallery" id="gallery"></div>
+    </div>
+
+    <!-- Quick Reactions -->
+    <div class="card">
+      <h2>✨ Quick Reactions & Gestures</h2>
+      <div class="row">
+        <button class="pink" onclick="setMode('love')">♡ Love Hearts</button>
+        <button class="alt" onclick="sendPat()">🐾 Pat / Touch</button>
+      </div>
+      <div class="row">
+        <button class="alt" onclick="sendBurst()">💥 Double-Tap Burst</button>
+        <button class="alt" onclick="setMode('dance')">♪ Dance</button>
+      </div>
+      <div class="row">
+        <button class="alt" onclick="setMode('sleep')">💤 Sleep</button>
+        <button class="alt" onclick="setMode('sparkle')">✧ Sparkles</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Expressions Preview & Grid -->
+  <section>
+    <div class="card">
+      <h2>🐱 Live Preview & Expressions</h2>
+      <div class="preview">
+        <div class="big" id="preview">૮ ˶ᵔ ᵕ ᵔ˶ ა</div>
+        <div class="label" id="label">Happy Kitty</div>
+      </div>
+      <p class="small">Tap any expression below to display it instantly on your Little Reminder OLED:</p>
+      <div class="faces" id="faces"></div>
+    </div>
+  </section>
+</div>
+
+<p class="small" style="text-align:center;margin-top:20px">
+  Little Reminder & CottonKitty Unified Firmware · 128x64 SSD1306 · ESP32-C3 SuperMini · 32 Expressions + 8 Gallery Bitmaps
+</p>
+</main>
+
+<script>
+let port = null, writer = null, isUSB = false;
+
+const items = [
+  ['happy','Happy','૮ ˶ᵔ ᵕ ᵔ˶ ა'],['love','Love','♥‿♥'],['shy','Shy','⁄ ⁄>⁄ω⁄<⁄ ⁄'],['sleep','Sleepy','= ᴗ = z'],
+  ['laugh','Laugh','≧▽≦'],['cry','Crying','ಥ﹏ಥ'],['angry','Angry','ಠ益ಠ'],['surprise','Surprised','⊙０⊙'],
+  ['wink','Wink','😉'],['cool','Cool','⌐■_■'],['sad','Sad','｡•́︿•̀｡'],['blush','Blushing','(⁄ ⁄•⁄ω⁄•⁄ ⁄)'],
+  ['excited','Excited','✧▽✧'],['dance','Dancing','♪ᕕ(ᐛ)ᕗ'],['thinking','Thinking','(¬_¬ )'],['confused','Confused','(・・?)'],
+  ['ghost','Love Ghost','◉♡◉'],['bunny','Bunny','૮₍ ˶ᵔ ᵕ ᵔ˶ ₎ა'],['star','Starry','✦‿✦'],['heart','Heart','♥'],
+  ['sleepy','Drowsy','-ᴗ- zZ'],['proud','Proud','ᕙ( •̀ ᗜ •́ )ᕗ'],['oops','Oops','Σ(°ロ°)'],['relaxed','Relaxed','( ˘ω˘ )'],
+  ['sparkle','Sparkles','✧･ﾟ: *✧'],['tiny','Tiny Kitty','ฅ^•ﻌ•^ฅ'],['robot','Robot','[◉_◉]'],['kiss','Kiss','( ˘ ³˘)♥'],
+  ['pout','Pout','(｡•́︿•̀｡)'],['party','Party','☆ヾ(≧▽≦*)o'],['floating','Floating','~(˘▾˘~)'],['calm','Calm','(ᵕᴗᵕ)']
+];
+
+const galleryItems = [
+  ['gallery_catwalk','🐈','Walking cat · 28 frames'],
+  ['gallery_heartface','♡','Heart-eyes face · 28 frames'],
+  ['gallery_dove','🕊️','Dove with flower'],
+  ['gallery_sadface','☹','Sad face · 10 frames'],
+  ['gallery_catmouse','🐱','Cat & mouse cuddle'],
+  ['gallery_rainygirl','☂','Girl with umbrella'],
+  ['gallery_couple','♡','Couple high-five'],
+  ['gallery_girlportrait','✿','Girl portrait']
+];
+
+// Populate Gallery
+const gal = document.getElementById('gallery');
+galleryItems.forEach(x => {
+  let b = document.createElement('button');
+  b.innerHTML = `<span>${x[1]}</span> <div><b>${x[2].split('·')[0]}</b><br><small style="color:#747582">${x[2].split('·')[1]||'Drawing'}</small></div>`;
+  b.onclick = () => {
+    document.querySelectorAll('#gallery button, .face').forEach(y => y.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById('preview').textContent = x[1];
+    document.getElementById('label').textContent = x[2];
+    setMode(x[0]);
+  };
+  gal.appendChild(b);
+});
+
+// Populate Expressions
+const g = document.getElementById('faces');
+items.forEach(x => {
+  let b = document.createElement('button');
+  b.className = 'face';
+  b.innerHTML = `<span>${x[2]}</span><small>${x[1]}</small>`;
+  b.onclick = () => {
+    document.querySelectorAll('#gallery button, .face').forEach(y => y.classList.remove('active'));
+    b.classList.add('active');
+    document.getElementById('preview').textContent = x[2];
+    document.getElementById('label').textContent = x[1];
+    setMode(x[0]);
+  };
+  g.appendChild(b);
+});
+
+function base() {
+  return document.getElementById('host').value.trim().replace(/\/$/,'');
+}
+
+function setStatus(msg) {
+  document.getElementById('status').textContent = msg;
+}
+
+function presetMsg(t) {
+  document.getElementById('msg').value = t;
+  sendMsg();
+}
+
+// Web Serial OTG Connection
+async function toggleUSB() {
+  if (isUSB && port) {
+    try {
+      if (writer) await writer.close();
+      await port.close();
+    } catch(e) {}
+    port = null; writer = null; isUSB = false;
+    document.getElementById('usbBtn').className = 'usb';
+    document.getElementById('usbBtn').textContent = '⚡ Connect USB-C OTG Cable';
+    setStatus('USB-C cable disconnected.');
+    return;
+  }
+
+  if (!navigator.serial) {
+    alert('Web Serial is supported on Chrome/Edge on Mac, PC, Chromebook, and Android with OTG cable!');
+    return;
+  }
+
+  try {
+    port = await navigator.serial.requestPort();
+    await port.open({ baudRate: 115200 });
+    const textEncoder = new TextEncoderStream();
+    textEncoder.readable.pipeTo(port.writable);
+    writer = textEncoder.writable.getWriter();
+    isUSB = true;
+    document.getElementById('usbBtn').className = 'usb connected';
+    document.getElementById('usbBtn').textContent = '🟢 USB-C OTG Connected!';
+    setStatus('🟢 Connected directly via USB-C OTG cable! Zero Wi-Fi needed.');
+    sendSerial('status\n');
+  } catch(e) {
+    setStatus('USB-C connection cancelled or failed.');
+  }
+}
+
+async function sendSerial(str) {
+  if (writer) {
+    try {
+      await writer.write(str);
+      return true;
+    } catch(e) {
+      console.error(e);
     }
+  }
+  return false;
+}
 
-    async function uploadIno() {
-      const text = document.getElementById('inoInput').value;
-      if (!parsedBytes && (!text || text.indexOf('0x') === -1)) {
-        showToast('Please paste valid .ino hex array first!');
-        return;
-      }
-      showToast('Uploading face to OLED...');
+// Wi-Fi HTTP Connection
+async function connectWiFi() {
+  setStatus('Connecting to ' + base() + '...');
+  try {
+    let r = await fetch(base() + '/api/status');
+    if (!r.ok) throw 0;
+    let data = await r.json();
+    setStatus('🟢 Connected to ' + data.name + ' over Wi-Fi! Mode: ' + data.mode);
+  } catch(e) {
+    setStatus('Connection failed. Connect to Wi-Fi CottonKitty (kittyfriend) or ESP.');
+  }
+}
 
-      if (activeMode === 'otg' && serialWriter) {
-        const hexStr = parsedBytes.map(b => '0x' + b.toString(16).padStart(2, '0')).join(',');
-        await sendOtgCommand('bitmap:' + hexStr);
-        showToast('Custom Face Uploaded via OTG!');
-      } else {
-        fetch(getWifiBase() + '/uploadIno', { method: 'POST', body: text })
-          .then(r => r.text())
-          .then(res => showToast(res))
-          .catch(() => showToast('Upload failed! Check Wi-Fi'));
-      }
-    }
-  </script>
+// Unified Dispatchers
+async function setMode(n) {
+  if (isUSB) {
+    await sendSerial('mode:' + n + '\n');
+    setStatus('⚡ Sent mode via USB-C OTG: ' + n);
+    return;
+  }
+  try {
+    await fetch(base() + '/api/mode?name=' + encodeURIComponent(n));
+    setStatus('Sent mode to OLED: ' + n);
+  } catch(e) {
+    setStatus('Not connected. Use USB-C OTG Cable or Wi-Fi.');
+  }
+}
+
+async function sendMsg() {
+  let t = document.getElementById('msg').value.trim();
+  if (!t) return;
+  if (isUSB) {
+    await sendSerial('msg:' + t + '\n');
+    setStatus('⚡ Sent message via USB-C OTG: ' + t);
+    return;
+  }
+  try {
+    await fetch(base() + '/api/message?text=' + encodeURIComponent(t));
+    setStatus('Message sent to OLED!');
+  } catch(e) {
+    setStatus('Not connected. Use USB-C OTG Cable or Wi-Fi.');
+  }
+}
+
+async function sendPat() {
+  if (isUSB) {
+    await sendSerial('pat\n');
+    setStatus('⚡ Sent Pat reaction via USB-C OTG');
+    return;
+  }
+  setMode('love');
+}
+
+async function sendBurst() {
+  if (isUSB) {
+    await sendSerial('doubletap\n');
+    setStatus('⚡ Sent Heart Explosion via USB-C OTG');
+    return;
+  }
+  setMode('love');
+}
+</script>
 </body>
 </html>
