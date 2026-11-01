@@ -607,9 +607,35 @@ async function toggleUSB() {
     document.getElementById('usbBtn').className = 'usb connected';
     document.getElementById('usbBtn').textContent = '🟢 USB-C OTG Connected!';
     setStatus('🟢 Connected directly via USB-C OTG cable! Zero Wi-Fi needed.');
+    startSerialReader();
     sendSerial('status\n');
   } catch(e) {
     setStatus('USB-C connection cancelled or failed.');
+  }
+}
+
+
+// Serial Reader Loop for incoming confirmations
+async function startSerialReader() {
+  while (port && port.readable && isUSB) {
+    try {
+      const textDecoder = new TextDecoderStream();
+      port.readable.pipeTo(textDecoder.writable);
+      reader = textDecoder.readable.getReader();
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          if (value.includes('OK:BITMAP_LOADED')) {
+            setStatus('🟢 OLED Display Updated! Saved to Flash NVS memory.');
+          } else if (value.includes('OK:DEFAULT_SAVED')) {
+            setStatus('★ Confirmed: Saved as default boot face!');
+          }
+        }
+      }
+    } catch(e) {
+      break;
+    }
   }
 }
 
@@ -1401,6 +1427,9 @@ void handleSerial() {
         hasCustomBitmap = true;
         currentMode = "custom";
         saveCustomBitmap();
+        display.clearDisplay();
+        display.drawBitmap(0, 0, customBitmap, 128, 64, SSD1306_WHITE);
+        display.display();
         Serial.println(F("OK:BITMAP_LOADED"));
       } else {
         Serial.println(F("ERR:NEED_2048_HEX"));
@@ -1594,6 +1623,7 @@ void setupWiFi() {
 // 🚀 SETUP
 // ==========================================
 void setup() {
+  Serial.setRxBufferSize(4096);
   Serial.begin(115200);
   delay(200);
   Serial.println();

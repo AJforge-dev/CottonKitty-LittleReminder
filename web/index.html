@@ -373,9 +373,35 @@ async function toggleUSB() {
     document.getElementById('usbBtn').className = 'usb connected';
     document.getElementById('usbBtn').textContent = '🟢 USB-C OTG Connected!';
     setStatus('🟢 Connected directly via USB-C OTG cable! Zero Wi-Fi needed.');
+    startSerialReader();
     sendSerial('status\n');
   } catch(e) {
     setStatus('USB-C connection cancelled or failed.');
+  }
+}
+
+
+// Serial Reader Loop for incoming confirmations
+async function startSerialReader() {
+  while (port && port.readable && isUSB) {
+    try {
+      const textDecoder = new TextDecoderStream();
+      port.readable.pipeTo(textDecoder.writable);
+      reader = textDecoder.readable.getReader();
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        if (value) {
+          if (value.includes('OK:BITMAP_LOADED')) {
+            setStatus('🟢 OLED Display Updated! Saved to Flash NVS memory.');
+          } else if (value.includes('OK:DEFAULT_SAVED')) {
+            setStatus('★ Confirmed: Saved as default boot face!');
+          }
+        }
+      }
+    } catch(e) {
+      break;
+    }
   }
 }
 
