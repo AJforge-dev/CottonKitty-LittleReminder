@@ -51,8 +51,8 @@
 // 2. Or connect to your Home Wi-Fi / Phone Hotspot:
 // (Put your Wi-Fi name & password here if you want it to join your home network.
 //  Leave empty "" to use the LittleReminder hotspot!)
-const char* HOME_WIFI_SSID = "";   // e.g. "MyHomeWiFi"
-const char* HOME_WIFI_PASS = "";   // e.g. "myPassword"
+const char* HOME_WIFI_SSID = "ESP";
+const char* HOME_WIFI_PASS = "Ajay@esp";
 
 String wifiIP = "192.168.4.1";
 
@@ -591,22 +591,35 @@ void wakeUp() {
 void updateWiFiState() {
   if (wifiEnabled) {
     if (strlen(HOME_WIFI_SSID) > 0) {
-      Serial.print(F("[WiFi] Connecting to Home Wi-Fi: "));
+      Serial.print(F("[WiFi] Connecting to: "));
       Serial.println(HOME_WIFI_SSID);
       WiFi.mode(WIFI_STA);
       WiFi.begin(HOME_WIFI_SSID, HOME_WIFI_PASS);
+
+      display.clearDisplay();
+      display.setTextSize(1);
+      display.setTextColor(SSD1306_WHITE);
+      display.setCursor(16, 18);
+      display.print(F("Connecting Wi-Fi"));
+      display.setCursor(16, 32);
+      display.print(HOME_WIFI_SSID);
+      display.setCursor(16, 46);
+      display.display();
+
       int retry = 0;
-      while (WiFi.status() != WL_CONNECTED && retry < 15) {
+      while (WiFi.status() != WL_CONNECTED && retry < 25) {
         delay(300);
         Serial.print(F("."));
+        display.print(F("."));
+        display.display();
         retry++;
       }
       if (WiFi.status() == WL_CONNECTED) {
         wifiIP = WiFi.localIP().toString();
-        Serial.print(F("\n[WiFi] Connected to Home Wi-Fi! IP: "));
+        Serial.print(F("\n[WiFi] Connected to Wi-Fi! IP: "));
         Serial.println(wifiIP);
       } else {
-        Serial.println(F("\n[WiFi] Home Wi-Fi failed. Falling back to Hotspot AP..."));
+        Serial.println(F("\n[WiFi] Wi-Fi connection timed out. Starting Hotspot AP..."));
         WiFi.mode(WIFI_AP);
         WiFi.softAP(AP_SSID, AP_PASS);
         wifiIP = WiFi.softAPIP().toString();
