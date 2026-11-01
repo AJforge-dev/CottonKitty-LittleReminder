@@ -21,15 +21,17 @@ button{cursor:pointer;background:#292a35;color:white;border:0;font-weight:500;tr
 button:active{transform:scale(0.97)}
 button.alt{background:#f1eff7;color:#292a35}
 button.pink{background:#f6c2d7;color:#34232b}
+button.star-btn{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
 button.usb{background:#4f46e5;color:white}
 button.usb.connected{background:#059669}
 input,textarea{width:100%}
 .row{display:flex;gap:8px;margin:8px 0}
 .row>*{flex:1}
 .status{font-size:13px;color:#747582;margin-top:10px;padding:8px 12px;background:#f9f9fc;border-radius:10px}
-.preview{background:#08090d;color:#00ffcc;border-radius:16px;padding:24px 15px;text-align:center;margin-bottom:12px;min-height:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;box-shadow:inset 0 0 15px rgba(0,255,204,0.15)}
+.preview{background:#08090d;color:#00ffcc;border-radius:16px;padding:20px 15px;text-align:center;margin-bottom:12px;min-height:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;box-shadow:inset 0 0 15px rgba(0,255,204,0.15)}
 .big{font-size:36px;font-family:monospace;letter-spacing:1px}
-.label{font-size:14px;color:#8be9fd;margin-top:8px}
+.label{font-size:14px;color:#8be9fd;margin-top:6px}
+.def-tag{display:inline-block;margin-top:6px;padding:2px 8px;border-radius:10px;background:#1e293b;color:#facc15;font-size:11px}
 .gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
 .gallery button{background:#fff;color:#292a35;border:1px solid #e8e8f0;text-align:left;padding:12px;min-height:56px;display:flex;align-items:center;gap:10px}
 .gallery button.active{background:#fff0f6;border-color:#e99cba}
@@ -52,7 +54,7 @@ input,textarea{width:100%}
   <div class="logo">♡</div>
   <div>
     <h1>CottonKitty & Little Reminder</h1>
-    <p>Your tiny animated companion with OLED Menu & OTG Web Serial</p>
+    <p>Your tiny animated companion with OLED Menu & Default Face Memory</p>
   </div>
 </header>
 
@@ -60,8 +62,8 @@ input,textarea{width:100%}
   <section>
     <!-- Connection Options -->
     <div class="card">
-      <h2>🔌 Connect to Companion</h2>
-      <p>Choose <b>USB-C OTG Cable</b> (fastest, zero Wi-Fi needed) or <b>Wi-Fi</b>:</p>
+      <h2>🔌 Connection</h2>
+      <p>Connect with <b>USB-C OTG Cable</b> or <b>Wi-Fi</b>:</p>
       
       <div style="margin:10px 0">
         <button id="usbBtn" class="usb" style="width:100%" onclick="toggleUSB()">⚡ Connect USB-C OTG Cable</button>
@@ -82,45 +84,42 @@ input,textarea{width:100%}
         <button class="pink" onclick="sendMsg()">Send to OLED</button>
         <button class="alt" onclick="presetMsg('You matter. ♡')">You matter ♡</button>
       </div>
-      <div class="row">
-        <button class="alt" onclick="presetMsg('Keep shining! ✨')">Keep shining ✨</button>
-        <button class="alt" onclick="presetMsg('A little hug for you! 🐾')">Hug 🐾</button>
-      </div>
     </div>
 
-    <!-- 8 Original Drawings/Animations Gallery -->
+    <!-- 8 Faces from original_sources -->
     <div class="card">
-      <h2>🖼️ Original Drawings Gallery</h2>
-      <p>Multi-frame animations & full-screen drawings from CottonKitty.</p>
+      <h2>🎭 Faces (from original_sources)</h2>
+      <p>Original animations & drawings from <code>original_sources/</code>.</p>
       <div class="gallery" id="gallery"></div>
     </div>
 
     <!-- Quick Reactions -->
     <div class="card">
-      <h2>✨ Quick Reactions & Gestures</h2>
+      <h2>✨ Quick Reactions</h2>
       <div class="row">
         <button class="pink" onclick="setMode('love')">♡ Love Hearts</button>
-        <button class="alt" onclick="sendPat()">🐾 Pat / Touch</button>
+        <button class="alt" onclick="sendPat()">🐾 Touch / Pat</button>
       </div>
       <div class="row">
         <button class="alt" onclick="sendBurst()">💥 Double-Tap Burst</button>
         <button class="alt" onclick="setMode('dance')">♪ Dance</button>
       </div>
-      <div class="row">
-        <button class="alt" onclick="setMode('sleep')">💤 Sleep</button>
-        <button class="alt" onclick="setMode('sparkle')">✧ Sparkles</button>
-      </div>
     </div>
   </section>
 
-  <!-- Expressions Preview & Grid -->
+  <!-- Live Preview & Expressions -->
   <section>
     <div class="card">
-      <h2>🐱 Live Preview & Expressions</h2>
+      <h2>🐱 Live Preview & Default Setting</h2>
       <div class="preview">
-        <div class="big" id="preview">૮ ˶ᵔ ᵕ ᵔ˶ ა</div>
-        <div class="label" id="label">Happy Kitty</div>
+        <div class="big" id="preview">♡</div>
+        <div class="label" id="label">Heart-Eyes Face (28F)</div>
+        <div class="def-tag" id="defTag">★ Boot Default: Heart-Eyes</div>
       </div>
+      <button class="star-btn" style="width:100%;margin-bottom:12px;font-weight:600" onclick="saveAsDefault()">
+        ★ Set Current Face as Default (Boot Face)
+      </button>
+
       <p class="small">Tap any expression below to display it instantly on your Little Reminder OLED:</p>
       <div class="faces" id="faces"></div>
     </div>
@@ -128,12 +127,14 @@ input,textarea{width:100%}
 </div>
 
 <p class="small" style="text-align:center;margin-top:20px">
-  Little Reminder & CottonKitty Unified Firmware · 128x64 SSD1306 · ESP32-C3 SuperMini · 32 Expressions + 8 Gallery Bitmaps
+  Little Reminder & CottonKitty Unified Firmware · 128x64 SSD1306 · ESP32-C3 SuperMini · 8 Original Faces + 32 Expressions
 </p>
 </main>
 
 <script>
 let port = null, writer = null, isUSB = false;
+let currentActiveMode = 'gallery_heartface';
+let currentDefaultFace = 'gallery_heartface';
 
 const items = [
   ['happy','Happy','૮ ˶ᵔ ᵕ ᵔ˶ ა'],['love','Love','♥‿♥'],['shy','Shy','⁄ ⁄>⁄ω⁄<⁄ ⁄'],['sleep','Sleepy','= ᴗ = z'],
@@ -147,17 +148,17 @@ const items = [
 ];
 
 const galleryItems = [
-  ['gallery_catwalk','🐈','Walking cat · 28 frames'],
-  ['gallery_heartface','♡','Heart-eyes face · 28 frames'],
+  ['gallery_heartface','♡','Heart-Eyes Face · 28F'],
+  ['gallery_sadface','☹','Sad Face · 10F'],
+  ['gallery_catwalk','🐈','Walking Cat · 28F'],
+  ['gallery_catmouse','🐱','Cat & Mouse cuddle'],
   ['gallery_dove','🕊️','Dove with flower'],
-  ['gallery_sadface','☹','Sad face · 10 frames'],
-  ['gallery_catmouse','🐱','Cat & mouse cuddle'],
   ['gallery_rainygirl','☂','Girl with umbrella'],
   ['gallery_couple','♡','Couple high-five'],
   ['gallery_girlportrait','✿','Girl portrait']
 ];
 
-// Populate Gallery
+// Populate 8 Faces from original_sources
 const gal = document.getElementById('gallery');
 galleryItems.forEach(x => {
   let b = document.createElement('button');
@@ -167,6 +168,7 @@ galleryItems.forEach(x => {
     b.classList.add('active');
     document.getElementById('preview').textContent = x[1];
     document.getElementById('label').textContent = x[2];
+    currentActiveMode = x[0];
     setMode(x[0]);
   };
   gal.appendChild(b);
@@ -183,6 +185,7 @@ items.forEach(x => {
     b.classList.add('active');
     document.getElementById('preview').textContent = x[2];
     document.getElementById('label').textContent = x[1];
+    currentActiveMode = x[0];
     setMode(x[0]);
   };
   g.appendChild(b);
@@ -230,7 +233,8 @@ async function toggleUSB() {
     document.getElementById('usbBtn').className = 'usb connected';
     document.getElementById('usbBtn').textContent = '🟢 USB-C OTG Connected!';
     setStatus('🟢 Connected directly via USB-C OTG cable! Zero Wi-Fi needed.');
-    sendSerial('status\n');
+    sendSerial('status
+');
   } catch(e) {
     setStatus('USB-C connection cancelled or failed.');
   }
@@ -255,6 +259,8 @@ async function connectWiFi() {
     let r = await fetch(base() + '/api/status');
     if (!r.ok) throw 0;
     let data = await r.json();
+    currentDefaultFace = data.default || currentDefaultFace;
+    document.getElementById('defTag').textContent = '★ Boot Default: ' + currentDefaultFace;
     setStatus('🟢 Connected to ' + data.name + ' over Wi-Fi! Mode: ' + data.mode);
   } catch(e) {
     setStatus('Connection failed. Connect to Wi-Fi CottonKitty (kittyfriend) or ESP.');
@@ -263,8 +269,10 @@ async function connectWiFi() {
 
 // Unified Dispatchers
 async function setMode(n) {
+  currentActiveMode = n;
   if (isUSB) {
-    await sendSerial('mode:' + n + '\n');
+    await sendSerial('mode:' + n + '
+');
     setStatus('⚡ Sent mode via USB-C OTG: ' + n);
     return;
   }
@@ -276,11 +284,32 @@ async function setMode(n) {
   }
 }
 
+async function saveAsDefault() {
+  let target = currentActiveMode;
+  if (isUSB) {
+    await sendSerial('default:' + target + '
+');
+    document.getElementById('defTag').textContent = '★ Boot Default: ' + target;
+    setStatus('★ Saved ' + target + ' as Default Boot Face via USB-C OTG!');
+    return;
+  }
+  try {
+    let r = await fetch(base() + '/api/setdefault?name=' + encodeURIComponent(target));
+    if (r.ok) {
+      document.getElementById('defTag').textContent = '★ Boot Default: ' + target;
+      setStatus('★ Saved ' + target + ' as Default Boot Face in ESP32 Flash!');
+    }
+  } catch(e) {
+    setStatus('Failed to save default. Connect with USB-C OTG or Wi-Fi.');
+  }
+}
+
 async function sendMsg() {
   let t = document.getElementById('msg').value.trim();
   if (!t) return;
   if (isUSB) {
-    await sendSerial('msg:' + t + '\n');
+    await sendSerial('msg:' + t + '
+');
     setStatus('⚡ Sent message via USB-C OTG: ' + t);
     return;
   }
@@ -294,7 +323,8 @@ async function sendMsg() {
 
 async function sendPat() {
   if (isUSB) {
-    await sendSerial('pat\n');
+    await sendSerial('pat
+');
     setStatus('⚡ Sent Pat reaction via USB-C OTG');
     return;
   }
@@ -303,7 +333,8 @@ async function sendPat() {
 
 async function sendBurst() {
   if (isUSB) {
-    await sendSerial('doubletap\n');
+    await sendSerial('doubletap
+');
     setStatus('⚡ Sent Heart Explosion via USB-C OTG');
     return;
   }

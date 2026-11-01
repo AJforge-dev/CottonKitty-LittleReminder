@@ -11,27 +11,29 @@
  * - BUTTON 2:      GPIO 1 (Open Menu / Select    - Active LOW with INPUT_PULLUP)
  *
  * FEATURES:
- * 1. 8 Original Gallery Drawings & Multi-Frame Animations from CottonKitty:
- *    - Walking Cat (28 frames)
+ * 1. 8 Original Faces & Multi-Frame Animations from original_sources:
  *    - Heart-Eyes Face (28 frames)
- *    - Dove with Flower (1 frame)
  *    - Sad Face (10 frames)
+ *    - Walking Cat (28 frames)
  *    - Cat & Mouse Cuddle (1 frame)
+ *    - Dove with Flower (1 frame)
  *    - Girl with Umbrella (1 frame)
  *    - Couple High-Five (1 frame)
  *    - Girl Portrait (1 frame)
- * 2. 32 Procedural Expressive Kaomoji Faces with blinking, dancing & reactions
+ * 2. 32 Procedural Expressive Kaomoji Faces (blinking, dancing & reactions)
  * 3. On-Screen OLED Menu System (Navigated via BTN1 and BTN2):
- *    - Gallery Drawings Sub-Menu
- *    - Cute Expressions Sub-Menu
- *    - Preset Messages Sub-Menu
- *    - Settings & Power (Auto-Sleep, Wi-Fi toggle, Double-Tap toggle)
+ *    - "1. Faces" (Direct access to original_sources animations & drawings)
+ *    - "2. Expressions" (Procedural kaomoji faces)
+ *    - "3. Keep as Default" (Permanently saves current face to Flash NVS!)
+ *    - "4. Preset Messages (5)"
+ *    - "5. Settings & Power" (Shows Default Face name, Auto-Sleep, Wi-Fi toggle)
+ *    - "6. [ Close Menu ]"
  * 4. Interactive Touch Sensor Gestures:
  *    - Single Tap: Love Heart Reaction
  *    - Double Tap: Animated Heart Explosion Burst!
  *    - Long Press (>1.5s): Snooze / Sleepy Zzz mode
- * 5. Auto-Sleep Battery Saver: Turns OLED display off after 45s of inactivity.
- *    Instant wake on touch or button press!
+ * 5. Persistent Memory (Preferences.h):
+ *    - Remembers default face across reboots, power switches, and sleep!
  * 6. Dual Control:
  *    - USB-C OTG Serial (Web Serial direct cable connection)
  *    - Wi-Fi Web Server (STA connect to 'ESP' with AP fallback 'CottonKitty')
@@ -43,6 +45,7 @@
 #include <Adafruit_SSD1306.h>
 #include <WiFi.h>
 #include <WebServer.h>
+#include <Preferences.h>
 #include "GalleryBitmaps.h"
 
 // ==========================================
@@ -69,21 +72,72 @@ const char* AP_PASS        = "kittyfriend";
 
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 WebServer server(80);
+Preferences preferences;
 
 // ==========================================
-// 🐾 MODES & EXPRESSIONS
+// 🐾 FACES & EXPRESSIONS DATA
 // ==========================================
+struct FaceEntry {
+  const char* id;
+  const char* name;
+};
+
+// 8 Faces from original_sources:
+const FaceEntry ORIGINAL_FACES[] = {
+  {"gallery_heartface",   "Heart-Eyes (28F)"},
+  {"gallery_sadface",     "Sad Face (10F)"},
+  {"gallery_catwalk",     "Walking Cat (28F)"},
+  {"gallery_catmouse",    "Cat & Mouse"},
+  {"gallery_dove",        "Dove with Flower"},
+  {"gallery_rainygirl",   "Rainy Girl"},
+  {"gallery_couple",      "Couple High-Five"},
+  {"gallery_girlportrait", "Girl Portrait"}
+};
+const uint8_t ORIGINAL_FACES_COUNT = 8;
+
+// Procedural Kaomoji Expressions:
+const FaceEntry EXPRESSIONS[] = {
+  {"happy",     "Happy Kitty"},
+  {"love",      "Love Hearts"},
+  {"shy",       "Shy Blushing"},
+  {"sleep",     "Sleepy Zzz"},
+  {"laugh",     "Laughing"},
+  {"cry",       "Crying Tear"},
+  {"angry",     "Angry Pout"},
+  {"surprise",  "Surprised"},
+  {"wink",      "Starry Wink"},
+  {"cool",      "Cool Shades"},
+  {"sad",       "Sad Pout"},
+  {"blush",     "Blushing"},
+  {"excited",   "Excited Star"},
+  {"dance",     "Dancing ♪"},
+  {"thinking",  "Thinking ?"},
+  {"confused",  "Confused ?"},
+  {"ghost",     "Love Ghost"},
+  {"bunny",     "Cute Bunny"},
+  {"star",      "Starry Eyes"},
+  {"heart",     "Heart Face"},
+  {"tiny",      "Tiny Kitty"},
+  {"robot",     "Robot Face"},
+  {"kiss",      "Kiss ( ˘ ³˘)"},
+  {"party",     "Party Time"},
+  {"calm",      "Calm Hug"}
+};
+const uint8_t EXPRESSIONS_COUNT = 25;
+
+// Combined cycling list (40 modes)
 const char* ALL_MODES[] = {
+  "gallery_heartface", "gallery_sadface", "gallery_catwalk", "gallery_catmouse",
+  "gallery_dove", "gallery_rainygirl", "gallery_couple", "gallery_girlportrait",
   "happy", "love", "shy", "sleep", "laugh", "cry", "angry", "surprise",
   "wink", "cool", "sad", "blush", "excited", "dance", "thinking", "confused",
   "ghost", "bunny", "star", "heart", "sleepy", "proud", "oops", "relaxed",
-  "sparkle", "tiny", "robot", "kiss", "pout", "party", "floating", "calm",
-  "gallery_catwalk", "gallery_heartface", "gallery_dove", "gallery_sadface",
-  "gallery_catmouse", "gallery_rainygirl", "gallery_couple", "gallery_girlportrait"
+  "sparkle", "tiny", "robot", "kiss", "pout", "party", "floating", "calm"
 };
 const uint8_t TOTAL_MODES = 40;
 
-String currentMode = "happy";
+String currentMode = "gallery_heartface";
+String defaultFace = "gallery_heartface";
 String currentMessage = "You matter.";
 uint8_t modeIdx = 0;
 uint8_t frameIdx = 0;
@@ -106,8 +160,8 @@ const uint8_t TOTAL_GREETINGS = 5;
 enum MenuState {
   STATE_NORMAL = 0,
   MENU_MAIN,
-  MENU_GALLERY,
-  MENU_EXPRESSIONS,
+  MENU_FACES,        // Option named "Faces" (from original_sources)
+  MENU_EXPRESSIONS,  // Option named "Expressions"
   MENU_MESSAGES,
   MENU_SETTINGS
 };
@@ -162,6 +216,9 @@ void handleSerial();
 void wakeUp();
 void goToSleep();
 void setupWiFi();
+void saveDefaultFace(String faceId);
+String getFaceFriendlyName(String id);
+void showDefaultSavedPopup(String name);
 
 // ==========================================
 // 🌐 WEB APPLICATION HTML (Stored in Flash)
@@ -189,15 +246,17 @@ button{cursor:pointer;background:#292a35;color:white;border:0;font-weight:500;tr
 button:active{transform:scale(0.97)}
 button.alt{background:#f1eff7;color:#292a35}
 button.pink{background:#f6c2d7;color:#34232b}
+button.star-btn{background:#fef3c7;color:#92400e;border:1px solid #fde68a}
 button.usb{background:#4f46e5;color:white}
 button.usb.connected{background:#059669}
 input,textarea{width:100%}
 .row{display:flex;gap:8px;margin:8px 0}
 .row>*{flex:1}
 .status{font-size:13px;color:#747582;margin-top:10px;padding:8px 12px;background:#f9f9fc;border-radius:10px}
-.preview{background:#08090d;color:#00ffcc;border-radius:16px;padding:24px 15px;text-align:center;margin-bottom:12px;min-height:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;box-shadow:inset 0 0 15px rgba(0,255,204,0.15)}
+.preview{background:#08090d;color:#00ffcc;border-radius:16px;padding:20px 15px;text-align:center;margin-bottom:12px;min-height:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;box-shadow:inset 0 0 15px rgba(0,255,204,0.15)}
 .big{font-size:36px;font-family:monospace;letter-spacing:1px}
-.label{font-size:14px;color:#8be9fd;margin-top:8px}
+.label{font-size:14px;color:#8be9fd;margin-top:6px}
+.def-tag{display:inline-block;margin-top:6px;padding:2px 8px;border-radius:10px;background:#1e293b;color:#facc15;font-size:11px}
 .gallery{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
 .gallery button{background:#fff;color:#292a35;border:1px solid #e8e8f0;text-align:left;padding:12px;min-height:56px;display:flex;align-items:center;gap:10px}
 .gallery button.active{background:#fff0f6;border-color:#e99cba}
@@ -220,7 +279,7 @@ input,textarea{width:100%}
   <div class="logo">♡</div>
   <div>
     <h1>CottonKitty & Little Reminder</h1>
-    <p>Your tiny animated companion with OLED Menu & OTG Web Serial</p>
+    <p>Your tiny animated companion with OLED Menu & Default Face Memory</p>
   </div>
 </header>
 
@@ -228,8 +287,8 @@ input,textarea{width:100%}
   <section>
     <!-- Connection Options -->
     <div class="card">
-      <h2>🔌 Connect to Companion</h2>
-      <p>Choose <b>USB-C OTG Cable</b> (fastest, zero Wi-Fi needed) or <b>Wi-Fi</b>:</p>
+      <h2>🔌 Connection</h2>
+      <p>Connect with <b>USB-C OTG Cable</b> or <b>Wi-Fi</b>:</p>
       
       <div style="margin:10px 0">
         <button id="usbBtn" class="usb" style="width:100%" onclick="toggleUSB()">⚡ Connect USB-C OTG Cable</button>
@@ -250,45 +309,42 @@ input,textarea{width:100%}
         <button class="pink" onclick="sendMsg()">Send to OLED</button>
         <button class="alt" onclick="presetMsg('You matter. ♡')">You matter ♡</button>
       </div>
-      <div class="row">
-        <button class="alt" onclick="presetMsg('Keep shining! ✨')">Keep shining ✨</button>
-        <button class="alt" onclick="presetMsg('A little hug for you! 🐾')">Hug 🐾</button>
-      </div>
     </div>
 
-    <!-- 8 Original Drawings/Animations Gallery -->
+    <!-- 8 Faces from original_sources -->
     <div class="card">
-      <h2>🖼️ Original Drawings Gallery</h2>
-      <p>Multi-frame animations & full-screen drawings from CottonKitty.</p>
+      <h2>🎭 Faces (from original_sources)</h2>
+      <p>Original animations & drawings from <code>original_sources/</code>.</p>
       <div class="gallery" id="gallery"></div>
     </div>
 
     <!-- Quick Reactions -->
     <div class="card">
-      <h2>✨ Quick Reactions & Gestures</h2>
+      <h2>✨ Quick Reactions</h2>
       <div class="row">
         <button class="pink" onclick="setMode('love')">♡ Love Hearts</button>
-        <button class="alt" onclick="sendPat()">🐾 Pat / Touch</button>
+        <button class="alt" onclick="sendPat()">🐾 Touch / Pat</button>
       </div>
       <div class="row">
         <button class="alt" onclick="sendBurst()">💥 Double-Tap Burst</button>
         <button class="alt" onclick="setMode('dance')">♪ Dance</button>
       </div>
-      <div class="row">
-        <button class="alt" onclick="setMode('sleep')">💤 Sleep</button>
-        <button class="alt" onclick="setMode('sparkle')">✧ Sparkles</button>
-      </div>
     </div>
   </section>
 
-  <!-- Expressions Preview & Grid -->
+  <!-- Live Preview & Expressions -->
   <section>
     <div class="card">
-      <h2>🐱 Live Preview & Expressions</h2>
+      <h2>🐱 Live Preview & Default Setting</h2>
       <div class="preview">
-        <div class="big" id="preview">૮ ˶ᵔ ᵕ ᵔ˶ ა</div>
-        <div class="label" id="label">Happy Kitty</div>
+        <div class="big" id="preview">♡</div>
+        <div class="label" id="label">Heart-Eyes Face (28F)</div>
+        <div class="def-tag" id="defTag">★ Boot Default: Heart-Eyes</div>
       </div>
+      <button class="star-btn" style="width:100%;margin-bottom:12px;font-weight:600" onclick="saveAsDefault()">
+        ★ Set Current Face as Default (Boot Face)
+      </button>
+
       <p class="small">Tap any expression below to display it instantly on your Little Reminder OLED:</p>
       <div class="faces" id="faces"></div>
     </div>
@@ -296,12 +352,14 @@ input,textarea{width:100%}
 </div>
 
 <p class="small" style="text-align:center;margin-top:20px">
-  Little Reminder & CottonKitty Unified Firmware · 128x64 SSD1306 · ESP32-C3 SuperMini · 32 Expressions + 8 Gallery Bitmaps
+  Little Reminder & CottonKitty Unified Firmware · 128x64 SSD1306 · ESP32-C3 SuperMini · 8 Original Faces + 32 Expressions
 </p>
 </main>
 
 <script>
 let port = null, writer = null, isUSB = false;
+let currentActiveMode = 'gallery_heartface';
+let currentDefaultFace = 'gallery_heartface';
 
 const items = [
   ['happy','Happy','૮ ˶ᵔ ᵕ ᵔ˶ ა'],['love','Love','♥‿♥'],['shy','Shy','⁄ ⁄>⁄ω⁄<⁄ ⁄'],['sleep','Sleepy','= ᴗ = z'],
@@ -315,17 +373,17 @@ const items = [
 ];
 
 const galleryItems = [
-  ['gallery_catwalk','🐈','Walking cat · 28 frames'],
-  ['gallery_heartface','♡','Heart-eyes face · 28 frames'],
+  ['gallery_heartface','♡','Heart-Eyes Face · 28F'],
+  ['gallery_sadface','☹','Sad Face · 10F'],
+  ['gallery_catwalk','🐈','Walking Cat · 28F'],
+  ['gallery_catmouse','🐱','Cat & Mouse cuddle'],
   ['gallery_dove','🕊️','Dove with flower'],
-  ['gallery_sadface','☹','Sad face · 10 frames'],
-  ['gallery_catmouse','🐱','Cat & mouse cuddle'],
   ['gallery_rainygirl','☂','Girl with umbrella'],
   ['gallery_couple','♡','Couple high-five'],
   ['gallery_girlportrait','✿','Girl portrait']
 ];
 
-// Populate Gallery
+// Populate 8 Faces from original_sources
 const gal = document.getElementById('gallery');
 galleryItems.forEach(x => {
   let b = document.createElement('button');
@@ -335,6 +393,7 @@ galleryItems.forEach(x => {
     b.classList.add('active');
     document.getElementById('preview').textContent = x[1];
     document.getElementById('label').textContent = x[2];
+    currentActiveMode = x[0];
     setMode(x[0]);
   };
   gal.appendChild(b);
@@ -351,6 +410,7 @@ items.forEach(x => {
     b.classList.add('active');
     document.getElementById('preview').textContent = x[2];
     document.getElementById('label').textContent = x[1];
+    currentActiveMode = x[0];
     setMode(x[0]);
   };
   g.appendChild(b);
@@ -398,7 +458,8 @@ async function toggleUSB() {
     document.getElementById('usbBtn').className = 'usb connected';
     document.getElementById('usbBtn').textContent = '🟢 USB-C OTG Connected!';
     setStatus('🟢 Connected directly via USB-C OTG cable! Zero Wi-Fi needed.');
-    sendSerial('status\n');
+    sendSerial('status
+');
   } catch(e) {
     setStatus('USB-C connection cancelled or failed.');
   }
@@ -423,6 +484,8 @@ async function connectWiFi() {
     let r = await fetch(base() + '/api/status');
     if (!r.ok) throw 0;
     let data = await r.json();
+    currentDefaultFace = data.default || currentDefaultFace;
+    document.getElementById('defTag').textContent = '★ Boot Default: ' + currentDefaultFace;
     setStatus('🟢 Connected to ' + data.name + ' over Wi-Fi! Mode: ' + data.mode);
   } catch(e) {
     setStatus('Connection failed. Connect to Wi-Fi CottonKitty (kittyfriend) or ESP.');
@@ -431,8 +494,10 @@ async function connectWiFi() {
 
 // Unified Dispatchers
 async function setMode(n) {
+  currentActiveMode = n;
   if (isUSB) {
-    await sendSerial('mode:' + n + '\n');
+    await sendSerial('mode:' + n + '
+');
     setStatus('⚡ Sent mode via USB-C OTG: ' + n);
     return;
   }
@@ -444,11 +509,32 @@ async function setMode(n) {
   }
 }
 
+async function saveAsDefault() {
+  let target = currentActiveMode;
+  if (isUSB) {
+    await sendSerial('default:' + target + '
+');
+    document.getElementById('defTag').textContent = '★ Boot Default: ' + target;
+    setStatus('★ Saved ' + target + ' as Default Boot Face via USB-C OTG!');
+    return;
+  }
+  try {
+    let r = await fetch(base() + '/api/setdefault?name=' + encodeURIComponent(target));
+    if (r.ok) {
+      document.getElementById('defTag').textContent = '★ Boot Default: ' + target;
+      setStatus('★ Saved ' + target + ' as Default Boot Face in ESP32 Flash!');
+    }
+  } catch(e) {
+    setStatus('Failed to save default. Connect with USB-C OTG or Wi-Fi.');
+  }
+}
+
 async function sendMsg() {
   let t = document.getElementById('msg').value.trim();
   if (!t) return;
   if (isUSB) {
-    await sendSerial('msg:' + t + '\n');
+    await sendSerial('msg:' + t + '
+');
     setStatus('⚡ Sent message via USB-C OTG: ' + t);
     return;
   }
@@ -462,7 +548,8 @@ async function sendMsg() {
 
 async function sendPat() {
   if (isUSB) {
-    await sendSerial('pat\n');
+    await sendSerial('pat
+');
     setStatus('⚡ Sent Pat reaction via USB-C OTG');
     return;
   }
@@ -471,7 +558,8 @@ async function sendPat() {
 
 async function sendBurst() {
   if (isUSB) {
-    await sendSerial('doubletap\n');
+    await sendSerial('doubletap
+');
     setStatus('⚡ Sent Heart Explosion via USB-C OTG');
     return;
   }
@@ -506,6 +594,45 @@ void heart(int x, int y, int r) {
   display.fillTriangle(x - 2 * r, y, x + 2 * r, y, x, y + 3 * r, SSD1306_WHITE);
 }
 
+String getFaceFriendlyName(String id) {
+  for (uint8_t i = 0; i < ORIGINAL_FACES_COUNT; i++) {
+    if (id == ORIGINAL_FACES[i].id) return ORIGINAL_FACES[i].name;
+  }
+  for (uint8_t i = 0; i < EXPRESSIONS_COUNT; i++) {
+    if (id == EXPRESSIONS[i].id) return EXPRESSIONS[i].name;
+  }
+  if (id == "uploaded") return "Heart-Eyes (28F)";
+  if (id == "message") return "Custom Message";
+  return id;
+}
+
+void showDefaultSavedPopup(String name) {
+  display.clearDisplay();
+  display.drawRoundRect(4, 4, 120, 56, 8, SSD1306_WHITE);
+  display.fillRect(6, 6, 116, 13, SSD1306_WHITE);
+  display.setTextColor(SSD1306_BLACK);
+  display.setTextSize(1);
+  display.setCursor(18, 9);
+  display.print(F("DEFAULT SAVED!"));
+
+  display.setTextColor(SSD1306_WHITE);
+  heart(64, 28, 3);
+  centered(name, 38);
+  centered(F("Permanent Boot Face"), 48);
+  display.display();
+  delay(1400);
+}
+
+void saveDefaultFace(String faceId) {
+  defaultFace = faceId;
+  preferences.begin("kitty", false);
+  preferences.putString("default", defaultFace);
+  preferences.end();
+  Serial.print(F("[Preferences] Saved default face: "));
+  Serial.println(defaultFace);
+  showDefaultSavedPopup(getFaceFriendlyName(defaultFace));
+}
+
 // ==========================================
 // 🎭 MAIN DISPLAY RENDERING (Modes, Gallery & Expressions)
 // ==========================================
@@ -535,26 +662,26 @@ void drawMode() {
     }
   }
 
-  // 2. Gallery Bitmaps (CottonKitty 8 original drawings/animations)
+  // 2. 8 Faces from original_sources
   if (currentMode.startsWith("gallery_") || currentMode == "uploaded") {
     const uint8_t* const* selectedFrames = heartfaceFrames;
     uint8_t selectedCount = heartfaceCount;
 
-    if (currentMode == "gallery_catwalk") {
-      selectedFrames = catwalkFrames;
-      selectedCount = catwalkCount;
-    } else if (currentMode == "gallery_heartface" || currentMode == "uploaded") {
+    if (currentMode == "gallery_heartface" || currentMode == "uploaded") {
       selectedFrames = heartfaceFrames;
       selectedCount = heartfaceCount;
-    } else if (currentMode == "gallery_dove") {
-      selectedFrames = doveFrames;
-      selectedCount = doveCount;
     } else if (currentMode == "gallery_sadface") {
       selectedFrames = sadfaceFrames;
       selectedCount = sadfaceCount;
+    } else if (currentMode == "gallery_catwalk") {
+      selectedFrames = catwalkFrames;
+      selectedCount = catwalkCount;
     } else if (currentMode == "gallery_catmouse") {
       selectedFrames = catmouseFrames;
       selectedCount = catmouseCount;
+    } else if (currentMode == "gallery_dove") {
+      selectedFrames = doveFrames;
+      selectedCount = doveCount;
     } else if (currentMode == "gallery_rainygirl") {
       selectedFrames = rainygirlFrames;
       selectedCount = rainygirlCount;
@@ -699,14 +826,14 @@ void renderMenu() {
 
   if (currentMenuState == MENU_MAIN) {
     display.print(F("=== MENU SELECT ==="));
-    const char* items[] = {
-      "1. Gallery Drawings (8)",
-      "2. Cute Expressions",
-      "3. Preset Messages (5)",
-      "4. Settings & Power",
-      "5. [ Close Menu ]"
-    };
-    const uint8_t count = 5;
+    String items[6];
+    items[0] = "1. Faces (original)";
+    items[1] = "2. Expressions";
+    items[2] = "3. Keep as Default";
+    items[3] = "4. Preset Messages (5)";
+    items[4] = "5. Settings & Power";
+    items[5] = "6. [ Close Menu ]";
+    const uint8_t count = 6;
 
     for (uint8_t i = 0; i < 4; i++) {
       uint8_t idx = i + menuScroll;
@@ -727,20 +854,18 @@ void renderMenu() {
       }
     }
   }
-  else if (currentMenuState == MENU_GALLERY) {
-    display.print(F("=== GALLERY (8) ==="));
-    const char* items[] = {
-      "Walking Cat (28F)",
-      "Heartface (28F)",
-      "Dove with Flower",
-      "Sad Face (10F)",
-      "Cat & Mouse Cuddle",
-      "Girl with Umbrella",
-      "Couple High-Five",
-      "Girl Portrait",
-      "< Back to Menu"
-    };
-    const uint8_t count = 9;
+  else if (currentMenuState == MENU_FACES) {
+    display.print(F("=== FACES (ORIGINAL) ==="));
+    String items[10];
+    for (uint8_t i = 0; i < ORIGINAL_FACES_COUNT; i++) {
+      items[i] = String(ORIGINAL_FACES[i].name);
+      if (String(ORIGINAL_FACES[i].id) == defaultFace) {
+        items[i] += " *";
+      }
+    }
+    items[8] = "★ Keep as Default";
+    items[9] = "< Back to Menu";
+    const uint8_t count = 10;
 
     for (uint8_t i = 0; i < 4; i++) {
       uint8_t idx = i + menuScroll;
@@ -763,25 +888,16 @@ void renderMenu() {
   }
   else if (currentMenuState == MENU_EXPRESSIONS) {
     display.print(F("=== EXPRESSIONS ==="));
-    const char* items[] = {
-      "Happy Kitty",
-      "Love Hearts",
-      "Shy Blush",
-      "Sweet Sleepy",
-      "Laughing",
-      "Crying Tear",
-      "Angry Pout",
-      "Surprised",
-      "Starry Wink",
-      "Cool Shades",
-      "Tiny Kitty",
-      "Robot Face",
-      "Dancing",
-      "Party Star",
-      "Calm Hug",
-      "< Back to Menu"
-    };
-    const uint8_t count = 16;
+    String items[EXPRESSIONS_COUNT + 2];
+    for (uint8_t i = 0; i < EXPRESSIONS_COUNT; i++) {
+      items[i] = String(EXPRESSIONS[i].name);
+      if (String(EXPRESSIONS[i].id) == defaultFace) {
+        items[i] += " *";
+      }
+    }
+    items[EXPRESSIONS_COUNT] = "★ Keep as Default";
+    items[EXPRESSIONS_COUNT + 1] = "< Back to Menu";
+    const uint8_t count = EXPRESSIONS_COUNT + 2;
 
     for (uint8_t i = 0; i < 4; i++) {
       uint8_t idx = i + menuScroll;
@@ -835,27 +951,30 @@ void renderMenu() {
   }
   else if (currentMenuState == MENU_SETTINGS) {
     display.print(F("=== SETTINGS ==="));
-    String items[4];
-    items[0] = String("AutoSleep: [") + (autoSleepEnabled ? "ON" : "OFF") + "]";
-    items[1] = String("Wi-Fi AP:  [") + (wifiEnabled ? "ON" : "OFF") + "]";
-    items[2] = String("DoubleTap: [") + (doubleTapEnabled ? "ON" : "OFF") + "]";
-    items[3] = "< Back to Menu";
-    const uint8_t count = 4;
+    String items[5];
+    items[0] = String("Def: ") + getFaceFriendlyName(defaultFace).substring(0, 11);
+    items[1] = String("AutoSleep: [") + (autoSleepEnabled ? "ON" : "OFF") + "]";
+    items[2] = String("Wi-Fi AP:  [") + (wifiEnabled ? "ON" : "OFF") + "]";
+    items[3] = String("DoubleTap: [") + (doubleTapEnabled ? "ON" : "OFF") + "]";
+    items[4] = "< Back to Menu";
+    const uint8_t count = 5;
 
-    for (uint8_t i = 0; i < count; i++) {
+    for (uint8_t i = 0; i < 4; i++) {
+      uint8_t idx = i + menuScroll;
+      if (idx >= count) break;
       uint8_t y = 14 + (i * 12);
-      bool isSelected = (i == menuCursor);
+      bool isSelected = (idx == menuCursor);
 
       if (isSelected) {
         display.fillRect(0, y - 1, 128, 11, SSD1306_WHITE);
         display.setTextColor(SSD1306_BLACK);
         display.setCursor(2, y);
         display.print("> ");
-        display.print(items[i]);
+        display.print(items[idx]);
       } else {
         display.setTextColor(SSD1306_WHITE);
         display.setCursor(10, y);
-        display.print(items[i]);
+        display.print(items[idx]);
       }
     }
   }
@@ -882,19 +1001,19 @@ void handleButtons() {
       if (isSleeping) { wakeUp(); return; }
 
       if (currentMenuState == STATE_NORMAL) {
-        // Cycle to next mode (CottonKitty 40 modes!)
+        // Cycle to next mode across all 40 modes
         modeIdx = (modeIdx + 1) % TOTAL_MODES;
         currentMode = ALL_MODES[modeIdx];
         frameIdx = 0;
-        Serial.print(F("[Button 1] Switched to mode: "));
+        Serial.print(F("[Button 1] Mode: "));
         Serial.println(currentMode);
       } else {
         // Scroll Menu Cursor Down
-        uint8_t maxItems = 5;
-        if (currentMenuState == MENU_GALLERY) maxItems = 9;
-        else if (currentMenuState == MENU_EXPRESSIONS) maxItems = 16;
+        uint8_t maxItems = 6;
+        if (currentMenuState == MENU_FACES) maxItems = 10;
+        else if (currentMenuState == MENU_EXPRESSIONS) maxItems = EXPRESSIONS_COUNT + 2;
         else if (currentMenuState == MENU_MESSAGES) maxItems = 6;
-        else if (currentMenuState == MENU_SETTINGS) maxItems = 4;
+        else if (currentMenuState == MENU_SETTINGS) maxItems = 5;
 
         menuCursor = (menuCursor + 1) % maxItems;
         if (menuCursor >= menuScroll + 4) menuScroll = menuCursor - 3;
@@ -927,32 +1046,40 @@ void handleButtons() {
       }
       else if (currentMenuState == MENU_MAIN) {
         if (menuCursor == 0) {
-          currentMenuState = MENU_GALLERY;
+          // 1. Faces (from original_sources)
+          currentMenuState = MENU_FACES;
           menuCursor = 0; menuScroll = 0;
         } else if (menuCursor == 1) {
+          // 2. Expressions
           currentMenuState = MENU_EXPRESSIONS;
           menuCursor = 0; menuScroll = 0;
         } else if (menuCursor == 2) {
+          // 3. Keep as Default
+          saveDefaultFace(currentMode);
+          currentMenuState = STATE_NORMAL;
+          return;
+        } else if (menuCursor == 3) {
+          // 4. Preset Messages
           currentMenuState = MENU_MESSAGES;
           menuCursor = 0; menuScroll = 0;
-        } else if (menuCursor == 3) {
+        } else if (menuCursor == 4) {
+          // 5. Settings & Power
           currentMenuState = MENU_SETTINGS;
           menuCursor = 0; menuScroll = 0;
-        } else if (menuCursor == 4) {
+        } else if (menuCursor == 5) {
           currentMenuState = STATE_NORMAL; // Close Menu
         }
         if (currentMenuState != STATE_NORMAL) renderMenu();
       }
-      else if (currentMenuState == MENU_GALLERY) {
-        const char* gModes[] = {
-          "gallery_catwalk", "gallery_heartface", "gallery_dove",
-          "gallery_sadface", "gallery_catmouse", "gallery_rainygirl",
-          "gallery_couple", "gallery_girlportrait"
-        };
-        if (menuCursor >= 0 && menuCursor < 8) {
-          currentMode = gModes[menuCursor];
+      else if (currentMenuState == MENU_FACES) {
+        if (menuCursor >= 0 && menuCursor < ORIGINAL_FACES_COUNT) {
+          currentMode = ORIGINAL_FACES[menuCursor].id;
           frameIdx = 0;
           currentMenuState = STATE_NORMAL;
+        } else if (menuCursor == 8) {
+          // Keep as Default
+          saveDefaultFace(currentMode);
+          renderMenu();
         } else {
           currentMenuState = MENU_MAIN;
           menuCursor = 0; menuScroll = 0;
@@ -960,15 +1087,14 @@ void handleButtons() {
         }
       }
       else if (currentMenuState == MENU_EXPRESSIONS) {
-        const char* eModes[] = {
-          "happy", "love", "shy", "sleep", "laugh", "cry",
-          "angry", "surprise", "wink", "cool", "tiny",
-          "robot", "dance", "party", "calm"
-        };
-        if (menuCursor >= 0 && menuCursor < 15) {
-          currentMode = eModes[menuCursor];
+        if (menuCursor >= 0 && menuCursor < EXPRESSIONS_COUNT) {
+          currentMode = EXPRESSIONS[menuCursor].id;
           frameIdx = 0;
           currentMenuState = STATE_NORMAL;
+        } else if (menuCursor == EXPRESSIONS_COUNT) {
+          // Keep as Default
+          saveDefaultFace(currentMode);
+          renderMenu();
         } else {
           currentMenuState = MENU_MAIN;
           menuCursor = 1; menuScroll = 0;
@@ -983,25 +1109,29 @@ void handleButtons() {
           currentMenuState = STATE_NORMAL;
         } else {
           currentMenuState = MENU_MAIN;
-          menuCursor = 2; menuScroll = 0;
+          menuCursor = 3; menuScroll = 0;
           renderMenu();
         }
       }
       else if (currentMenuState == MENU_SETTINGS) {
         if (menuCursor == 0) {
-          autoSleepEnabled = !autoSleepEnabled;
+          // Set current mode as default
+          saveDefaultFace(currentMode);
           renderMenu();
         } else if (menuCursor == 1) {
+          autoSleepEnabled = !autoSleepEnabled;
+          renderMenu();
+        } else if (menuCursor == 2) {
           wifiEnabled = !wifiEnabled;
           if (wifiEnabled) { setupWiFi(); }
           else { WiFi.disconnect(true); WiFi.mode(WIFI_OFF); }
           renderMenu();
-        } else if (menuCursor == 2) {
+        } else if (menuCursor == 3) {
           doubleTapEnabled = !doubleTapEnabled;
           renderMenu();
-        } else if (menuCursor == 3) {
+        } else if (menuCursor == 4) {
           currentMenuState = MENU_MAIN;
-          menuCursor = 3; menuScroll = 0;
+          menuCursor = 4; menuScroll = 0;
           renderMenu();
         }
       }
@@ -1087,6 +1217,15 @@ void handleSerial() {
       frameIdx = 0;
       Serial.println(F("OK:MODE_SET"));
     }
+    else if (line.startsWith("default:") || line.startsWith("setdefault:")) {
+      String param = line.substring(line.indexOf(':') + 1);
+      saveDefaultFace(param);
+      Serial.println(F("OK:DEFAULT_SAVED"));
+    }
+    else if (line == "setdefault" || line == "default") {
+      saveDefaultFace(currentMode);
+      Serial.println(F("OK:DEFAULT_SAVED"));
+    }
     else if (line.startsWith("face:")) {
       String param = line.substring(5);
       if (param.toInt() >= 0 && param.toInt() < TOTAL_MODES && (param != "0" || line == "face:0")) {
@@ -1117,6 +1256,8 @@ void handleSerial() {
     else if (line == "status") {
       Serial.print(F("STATUS:name=CottonKitty,mode="));
       Serial.print(currentMode);
+      Serial.print(F(",default="));
+      Serial.print(defaultFace);
       Serial.print(F(",ip="));
       Serial.print(wifiIP);
       Serial.print(F(",wifi="));
@@ -1136,7 +1277,9 @@ void sendApp() {
 }
 
 void sendStatus() {
-  String json = String(R"({"name":"CottonKitty","connected":true,"mode":")") + currentMode + String(R"(","ip":")") + wifiIP + String(R"("})");
+  String json = String(R"({"name":"CottonKitty","connected":true,"mode":")") + currentMode +
+                String(R"(","default":")") + defaultFace +
+                String(R"(","ip":")") + wifiIP + String(R"("})");
   server.send(200, "application/json", json);
 }
 
@@ -1150,6 +1293,15 @@ void modeRoute() {
   server.send(200, "application/json", R"({"ok":true})");
 }
 
+void setDefaultRoute() {
+  if (server.hasArg("name")) {
+    saveDefaultFace(server.arg("name"));
+  } else {
+    saveDefaultFace(currentMode);
+  }
+  server.send(200, "application/json", R"({"ok":true,"default":")" + defaultFace + R"("})");
+}
+
 void messageRoute() {
   if (server.hasArg("text")) {
     currentMessage = server.arg("text");
@@ -1159,6 +1311,7 @@ void messageRoute() {
   }
   server.send(200, "application/json", R"({"ok":true})");
 }
+
 void setupWiFi() {
   WiFi.mode(WIFI_STA);
   Serial.print(F("[WiFi] Connecting to: "));
@@ -1173,10 +1326,12 @@ void setupWiFi() {
 
   if (WiFi.status() == WL_CONNECTED) {
     wifiIP = WiFi.localIP().toString();
-    Serial.println(); Serial.print(F("[WiFi] Connected to Home Wi-Fi! IP: "));
+    Serial.println();
+    Serial.print(F("[WiFi] Connected to Home Wi-Fi! IP: "));
     Serial.println(wifiIP);
   } else {
-    Serial.println(); Serial.println(F("[WiFi] Starting SoftAP CottonKitty (192.168.4.1)... "));
+    Serial.println();
+    Serial.println(F("[WiFi] Starting SoftAP CottonKitty (192.168.4.1)... "));
     WiFi.mode(WIFI_AP);
     WiFi.softAP(AP_SSID, AP_PASS);
     wifiIP = WiFi.softAPIP().toString();
@@ -1187,6 +1342,7 @@ void setupWiFi() {
   server.on("/", sendApp);
   server.on("/api/status", sendStatus);
   server.on("/api/mode", modeRoute);
+  server.on("/api/setdefault", setDefaultRoute);
   server.on("/api/message", messageRoute);
   server.begin();
   Serial.println(F("[WiFi] HTTP WebServer started on port 80."));
@@ -1198,9 +1354,18 @@ void setupWiFi() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println(); Serial.println(F("============================================"));
+  Serial.println();
+  Serial.println(F("============================================"));
   Serial.println(F("🐾 CottonKitty & Little Reminder Unified FW 🐾"));
   Serial.println(F("============================================"));
+
+  // Load Saved Default Face from Flash NVS
+  preferences.begin("kitty", false);
+  defaultFace = preferences.getString("default", "gallery_heartface");
+  preferences.end();
+  currentMode = defaultFace;
+  Serial.print(F("[Preferences] Loaded default boot face: "));
+  Serial.println(defaultFace);
 
   // Pins Setup
   pinMode(BTN1_PIN, INPUT_PULLUP);
@@ -1217,14 +1382,17 @@ void setup() {
   display.clearDisplay();
   display.setTextColor(SSD1306_WHITE);
   display.setTextSize(1);
-  display.setCursor(18, 12);
+  display.setCursor(18, 10);
   display.println(F("CottonKitty &"));
-  display.setCursor(18, 24);
+  display.setCursor(18, 22);
   display.println(F("Little Reminder"));
-  display.setCursor(18, 42);
+  display.setCursor(18, 38);
+  display.print(F("Boot: "));
+  display.println(getFaceFriendlyName(defaultFace).substring(0, 10));
+  display.setCursor(18, 50);
   display.println(F("Starting..."));
-  heart(108, 18, 3);
-  star(10, 18);
+  heart(108, 16, 3);
+  star(8, 16);
   display.display();
   delay(1200);
 
