@@ -21,22 +21,24 @@
  *    - Couple High-Five (1 frame)
  *    - Girl Portrait (1 frame)
  * 2. 32 Procedural Expressive Kaomoji Faces (blinking, dancing & reactions)
- * 3. On-Screen OLED Menu System (Navigated via BTN1 and BTN2):
- *    - "1. Faces" (Direct access to original_sources animations & drawings)
+ * 3. 🎨 ADD NEW FACE (.INO CODE) from oledanimationmaker.com:
+ *    - Live canvas preview in browser
+ *    - Auto-polarity inversion detection
+ *    - Upload via USB-C OTG Cable or Wi-Fi
+ *    - Saved to Flash NVS so custom faces survive power-off & reboot!
+ * 4. On-Screen OLED Menu System (Navigated via BTN1 and BTN2):
+ *    - "1. Faces" (Direct access to original_sources & custom uploaded face)
  *    - "2. Expressions" (Procedural kaomoji faces)
  *    - "3. Keep as Default" (Permanently saves current face to Flash NVS!)
  *    - "4. Preset Messages (5)"
  *    - "5. Settings & Power" (Shows Default Face name, Auto-Sleep, Wi-Fi toggle)
  *    - "6. [ Close Menu ]"
- * 4. Interactive Touch Sensor Gestures:
+ * 5. Interactive Touch Sensor Gestures:
  *    - Single Tap: Love Heart Reaction
  *    - Double Tap: Animated Heart Explosion Burst!
  *    - Long Press (>1.5s): Snooze / Sleepy Zzz mode
- * 5. Persistent Memory (Preferences.h):
- *    - Remembers default face across reboots, power switches, and sleep!
- * 6. Dual Control:
- *    - USB-C OTG Serial (Web Serial direct cable connection)
- *    - Wi-Fi Web Server (STA connect to 'ESP' with AP fallback 'CottonKitty')
+ * 6. Persistent Memory (Preferences.h):
+ *    - Remembers default face and custom uploaded face across reboots & battery switches!
  * =========================================================================
  */
 
@@ -73,6 +75,12 @@ const char* AP_PASS        = "kittyfriend";
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 WebServer server(80);
 Preferences preferences;
+
+// ==========================================
+// 🎨 CUSTOM BITMAP STORAGE (from oledanimationmaker.com)
+// ==========================================
+uint8_t customBitmap[1024];
+bool hasCustomBitmap = false;
 
 // ==========================================
 // 🐾 FACES & EXPRESSIONS DATA
@@ -125,7 +133,7 @@ const FaceEntry EXPRESSIONS[] = {
 };
 const uint8_t EXPRESSIONS_COUNT = 25;
 
-// Combined cycling list (40 modes)
+// Combined cycling list
 const char* ALL_MODES[] = {
   "gallery_heartface", "gallery_sadface", "gallery_catwalk", "gallery_catmouse",
   "gallery_dove", "gallery_rainygirl", "gallery_couple", "gallery_girlportrait",
@@ -217,6 +225,7 @@ void wakeUp();
 void goToSleep();
 void setupWiFi();
 void saveDefaultFace(String faceId);
+void saveCustomBitmap();
 String getFaceFriendlyName(String id);
 void showDefaultSavedPopup(String name);
 
@@ -253,7 +262,7 @@ input,textarea{width:100%}
 .row{display:flex;gap:8px;margin:8px 0}
 .row>*{flex:1}
 .status{font-size:13px;color:#747582;margin-top:10px;padding:8px 12px;background:#f9f9fc;border-radius:10px}
-.preview{background:#08090d;color:#00ffcc;border-radius:16px;padding:20px 15px;text-align:center;margin-bottom:12px;min-height:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;box-shadow:inset 0 0 15px rgba(0,255,204,0.15)}
+.preview{background:#08090d;color:#00ffcc;border-radius:16px;padding:18px 15px;text-align:center;margin-bottom:12px;min-height:120px;display:flex;flex-direction:column;justify-content:center;align-items:center;box-shadow:inset 0 0 15px rgba(0,255,204,0.15)}
 .big{font-size:36px;font-family:monospace;letter-spacing:1px}
 .label{font-size:14px;color:#8be9fd;margin-top:6px}
 .def-tag{display:inline-block;margin-top:6px;padding:2px 8px;border-radius:10px;background:#1e293b;color:#facc15;font-size:11px}
@@ -266,6 +275,9 @@ input,textarea{width:100%}
 .face small{font-size:11px;color:#727582}
 .face.active{background:#fff0f6;border:1px solid #e99cba}
 .small{font-size:12px;color:#8a8c99}
+.upload-box{border:2px dashed #fda4af;background:#fff5f7;border-radius:16px;padding:16px;margin-top:10px}
+.canvas-wrap{text-align:center;margin:12px 0}
+canvas{background:#08090d;border-radius:12px;border:1px solid #222;width:256px;height:128px;image-rendering:pixelated;box-shadow:0 4px 12px rgba(0,0,0,0.15)}
 @media(max-width:680px){
   .layout{grid-template-columns:1fr}
   .faces{grid-template-columns:repeat(3,1fr)}
@@ -279,7 +291,7 @@ input,textarea{width:100%}
   <div class="logo">♡</div>
   <div>
     <h1>CottonKitty & Little Reminder</h1>
-    <p>Your tiny animated companion with OLED Menu & Default Face Memory</p>
+    <p>Your tiny animated companion with OLED Menu, Custom Face Upload & Default Memory</p>
   </div>
 </header>
 
@@ -299,6 +311,28 @@ input,textarea{width:100%}
         <button onclick="connectWiFi()">Wi-Fi Connect</button>
       </div>
       <div id="status" class="status">Ready to connect via USB-C or Wi-Fi</div>
+    </div>
+
+    <!-- 4. ADD NEW FACE (.INO CODE) from oledanimationmaker.com -->
+    <div class="card">
+      <h2>🎨 4. ADD NEW FACE (.INO CODE)</h2>
+      <p>Paste code from <a href="https://www.oledanimationmaker.com/" target="_blank" style="color:#e11d48;font-weight:600">oledanimationmaker.com</a>:</p>
+      
+      <div class="upload-box">
+        <textarea id="inoCode" rows="4" placeholder="const uint8_t PROGMEM frame[1024] = { 0x00, ... };" oninput="previewIno()"></textarea>
+        
+        <div class="canvas-wrap">
+          <canvas id="inoCanvas" width="128" height="64"></canvas>
+          <div style="margin-top:6px;display:flex;justify-content:center;align-items:center;gap:12px;font-size:12px">
+            <label><input type="checkbox" id="invertBox" onchange="previewIno()"> Invert Colors (Black/White)</label>
+            <span id="byteCount" style="color:#727582">0 / 1024 bytes</span>
+          </div>
+        </div>
+
+        <button class="pink" style="width:100%;font-weight:600;padding:12px;background:#2d2a45;color:white" onclick="uploadIno()">
+          Upload Face to OLED
+        </button>
+      </div>
     </div>
 
     <!-- Send a Message -->
@@ -360,6 +394,7 @@ input,textarea{width:100%}
 let port = null, writer = null, isUSB = false;
 let currentActiveMode = 'gallery_heartface';
 let currentDefaultFace = 'gallery_heartface';
+let parsedInoBytes = null;
 
 const items = [
   ['happy','Happy','૮ ˶ᵔ ᵕ ᵔ˶ ა'],['love','Love','♥‿♥'],['shy','Shy','⁄ ⁄>⁄ω⁄<⁄ ⁄'],['sleep','Sleepy','= ᴗ = z'],
@@ -429,6 +464,120 @@ function presetMsg(t) {
   sendMsg();
 }
 
+// ==========================================
+// 🎨 Preview .INO Bitmap from oledanimationmaker.com
+// ==========================================
+function previewIno() {
+  const code = document.getElementById('inoCode').value;
+  const canvas = document.getElementById('inoCanvas');
+  const ctx = canvas.getContext('2d');
+  ctx.fillStyle = '#08090d';
+  ctx.fillRect(0, 0, 128, 64);
+
+  // Match all hex bytes 0x00 .. 0xFF
+  const matches = code.match(/0x[0-9a-fA-F]{1,2}/g);
+  const countSpan = document.getElementById('byteCount');
+
+  if (!matches) {
+    countSpan.textContent = '0 / 1024 bytes';
+    parsedInoBytes = null;
+    return;
+  }
+
+  countSpan.textContent = Math.min(matches.length, 1024) + ' / 1024 bytes';
+  if (matches.length < 1024) {
+    parsedInoBytes = null;
+    return;
+  }
+
+  const rawBytes = new Uint8Array(1024);
+  for (let i = 0; i < 1024; i++) {
+    rawBytes[i] = parseInt(matches[i], 16);
+  }
+
+  // Check auto-polarity: if mostly 0xFF, invert
+  let ffCount = 0;
+  for (let i = 0; i < 1024; i++) {
+    if (rawBytes[i] === 0xff) ffCount++;
+  }
+  let manualInvert = document.getElementById('invertBox').checked;
+  let autoInvert = (ffCount > 400);
+  let shouldInvert = manualInvert ? !autoInvert : autoInvert;
+
+  // Render to 128x64 Canvas (SSD1306 horizontal MSB-first format)
+  const imgData = ctx.createImageData(128, 64);
+  const finalBytes = new Uint8Array(1024);
+
+  for (let i = 0; i < 1024; i++) {
+    finalBytes[i] = shouldInvert ? (~rawBytes[i] & 0xff) : rawBytes[i];
+  }
+
+  for (let y = 0; y < 64; y++) {
+    for (let x = 0; x < 128; x++) {
+      const bIdx = y * 16 + (x >> 3);
+      const bit = (finalBytes[bIdx] >> (7 - (x & 7))) & 1;
+      const pIdx = (y * 128 + x) * 4;
+      if (bit) {
+        imgData.data[pIdx] = 0;     // R
+        imgData.data[pIdx+1] = 255; // G (cyan-white OLED phosphor)
+        imgData.data[pIdx+2] = 204; // B
+        imgData.data[pIdx+3] = 255;
+      } else {
+        imgData.data[pIdx] = 8;
+        imgData.data[pIdx+1] = 9;
+        imgData.data[pIdx+2] = 13;
+        imgData.data[pIdx+3] = 255;
+      }
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
+  parsedInoBytes = finalBytes;
+}
+
+// Upload Face to OLED
+async function uploadIno() {
+  if (!parsedInoBytes || parsedInoBytes.length < 1024) {
+    alert('Please paste valid .ino code containing 1024 bytes (128x64 SSD1306 bitmap)!');
+    return;
+  }
+
+  setStatus('Uploading custom face to OLED...');
+
+  // 1. If USB connected: send via USB-C OTG Serial
+  if (isUSB) {
+    let hexStr = '';
+    for (let i = 0; i < 1024; i++) {
+      hexStr += parsedInoBytes[i].toString(16).padStart(2, '0');
+    }
+    await sendSerial('bitmap:' + hexStr + '\n');
+    currentActiveMode = 'custom';
+    document.getElementById('preview').textContent = '🎨';
+    document.getElementById('label').textContent = 'Custom Uploaded Face';
+    setStatus('⚡ Uploaded custom face to OLED via USB-C OTG! Saved to Flash memory.');
+    return;
+  }
+
+  // 2. If Wi-Fi connected: send via HTTP POST
+  try {
+    let hexStr = '';
+    for (let i = 0; i < 1024; i++) {
+      hexStr += parsedInoBytes[i].toString(16).padStart(2, '0');
+    }
+    let r = await fetch(base() + '/api/upload_bitmap', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: hexStr
+    });
+    if (!r.ok) throw Error('HTTP ' + r.status);
+    currentActiveMode = 'custom';
+    document.getElementById('preview').textContent = '🎨';
+    document.getElementById('label').textContent = 'Custom Uploaded Face';
+    setStatus('🟢 Uploaded custom face to OLED via Wi-Fi! Saved to Flash memory.');
+  } catch(e) {
+    setStatus('Upload failed. Connect via USB-C OTG cable or join Wi-Fi CottonKitty.');
+  }
+}
+
 // Web Serial OTG Connection
 async function toggleUSB() {
   if (isUSB && port) {
@@ -458,8 +607,7 @@ async function toggleUSB() {
     document.getElementById('usbBtn').className = 'usb connected';
     document.getElementById('usbBtn').textContent = '🟢 USB-C OTG Connected!';
     setStatus('🟢 Connected directly via USB-C OTG cable! Zero Wi-Fi needed.');
-    sendSerial('status
-');
+    sendSerial('status\n');
   } catch(e) {
     setStatus('USB-C connection cancelled or failed.');
   }
@@ -496,8 +644,7 @@ async function connectWiFi() {
 async function setMode(n) {
   currentActiveMode = n;
   if (isUSB) {
-    await sendSerial('mode:' + n + '
-');
+    await sendSerial('mode:' + n + '\n');
     setStatus('⚡ Sent mode via USB-C OTG: ' + n);
     return;
   }
@@ -512,8 +659,7 @@ async function setMode(n) {
 async function saveAsDefault() {
   let target = currentActiveMode;
   if (isUSB) {
-    await sendSerial('default:' + target + '
-');
+    await sendSerial('default:' + target + '\n');
     document.getElementById('defTag').textContent = '★ Boot Default: ' + target;
     setStatus('★ Saved ' + target + ' as Default Boot Face via USB-C OTG!');
     return;
@@ -533,8 +679,7 @@ async function sendMsg() {
   let t = document.getElementById('msg').value.trim();
   if (!t) return;
   if (isUSB) {
-    await sendSerial('msg:' + t + '
-');
+    await sendSerial('msg:' + t + '\n');
     setStatus('⚡ Sent message via USB-C OTG: ' + t);
     return;
   }
@@ -548,8 +693,7 @@ async function sendMsg() {
 
 async function sendPat() {
   if (isUSB) {
-    await sendSerial('pat
-');
+    await sendSerial('pat\n');
     setStatus('⚡ Sent Pat reaction via USB-C OTG');
     return;
   }
@@ -558,8 +702,7 @@ async function sendPat() {
 
 async function sendBurst() {
   if (isUSB) {
-    await sendSerial('doubletap
-');
+    await sendSerial('doubletap\n');
     setStatus('⚡ Sent Heart Explosion via USB-C OTG');
     return;
   }
@@ -595,6 +738,7 @@ void heart(int x, int y, int r) {
 }
 
 String getFaceFriendlyName(String id) {
+  if (id == "custom") return "Custom Face";
   for (uint8_t i = 0; i < ORIGINAL_FACES_COUNT; i++) {
     if (id == ORIGINAL_FACES[i].id) return ORIGINAL_FACES[i].name;
   }
@@ -633,8 +777,16 @@ void saveDefaultFace(String faceId) {
   showDefaultSavedPopup(getFaceFriendlyName(defaultFace));
 }
 
+void saveCustomBitmap() {
+  preferences.begin("kitty", false);
+  preferences.putBytes("customBmp", customBitmap, 1024);
+  preferences.putBool("hasCustom", true);
+  preferences.end();
+  Serial.println(F("[Preferences] Saved custom bitmap to Flash NVS."));
+}
+
 // ==========================================
-// 🎭 MAIN DISPLAY RENDERING (Modes, Gallery & Expressions)
+// 🎭 MAIN DISPLAY RENDERING (Modes, Gallery, Custom & Expressions)
 // ==========================================
 void drawMode() {
   unsigned long t = millis();
@@ -662,8 +814,12 @@ void drawMode() {
     }
   }
 
-  // 2. 8 Faces from original_sources
-  if (currentMode.startsWith("gallery_") || currentMode == "uploaded") {
+  // 2. Custom Uploaded Bitmap Face (from oledanimationmaker.com)
+  if (currentMode == "custom" && hasCustomBitmap) {
+    display.drawBitmap(0, 0, customBitmap, 128, 64, SSD1306_WHITE);
+  }
+  // 3. 8 Faces from original_sources
+  else if (currentMode.startsWith("gallery_") || currentMode == "uploaded") {
     const uint8_t* const* selectedFrames = heartfaceFrames;
     uint8_t selectedCount = heartfaceCount;
 
@@ -702,14 +858,14 @@ void drawMode() {
       }
     }
   }
-  // 3. Custom Messages
+  // 4. Custom Messages
   else if (currentMode == "message") {
     heart(64, 16, 5);
     String s = currentMessage;
     if (s.length() > 21) s = s.substring(0, 21);
     centered(s, 44);
   }
-  // 4. Procedural Expressive Kaomoji Faces (CottonKitty 32 Faces)
+  // 5. Procedural Expressive Kaomoji Faces (CottonKitty 32 Faces)
   else {
     bool blink = (t % 3000) < 120;
 
@@ -855,17 +1011,27 @@ void renderMenu() {
     }
   }
   else if (currentMenuState == MENU_FACES) {
-    display.print(F("=== FACES (ORIGINAL) ==="));
-    String items[10];
-    for (uint8_t i = 0; i < ORIGINAL_FACES_COUNT; i++) {
-      items[i] = String(ORIGINAL_FACES[i].name);
-      if (String(ORIGINAL_FACES[i].id) == defaultFace) {
-        items[i] += " *";
-      }
+    display.print(F("=== FACES ==="));
+    uint8_t count = ORIGINAL_FACES_COUNT + (hasCustomBitmap ? 1 : 0) + 2;
+    String items[12];
+    uint8_t ptr = 0;
+
+    if (hasCustomBitmap) {
+      items[ptr] = "Custom Face";
+      if (defaultFace == "custom") items[ptr] += " *";
+      ptr++;
     }
-    items[8] = "★ Keep as Default";
-    items[9] = "< Back to Menu";
-    const uint8_t count = 10;
+
+    for (uint8_t i = 0; i < ORIGINAL_FACES_COUNT; i++) {
+      items[ptr] = String(ORIGINAL_FACES[i].name);
+      if (String(ORIGINAL_FACES[i].id) == defaultFace) {
+        items[ptr] += " *";
+      }
+      ptr++;
+    }
+
+    items[ptr++] = "★ Keep as Default";
+    items[ptr++] = "< Back to Menu";
 
     for (uint8_t i = 0; i < 4; i++) {
       uint8_t idx = i + menuScroll;
@@ -1010,7 +1176,7 @@ void handleButtons() {
       } else {
         // Scroll Menu Cursor Down
         uint8_t maxItems = 6;
-        if (currentMenuState == MENU_FACES) maxItems = 10;
+        if (currentMenuState == MENU_FACES) maxItems = ORIGINAL_FACES_COUNT + (hasCustomBitmap ? 1 : 0) + 2;
         else if (currentMenuState == MENU_EXPRESSIONS) maxItems = EXPRESSIONS_COUNT + 2;
         else if (currentMenuState == MENU_MESSAGES) maxItems = 6;
         else if (currentMenuState == MENU_SETTINGS) maxItems = 5;
@@ -1072,18 +1238,26 @@ void handleButtons() {
         if (currentMenuState != STATE_NORMAL) renderMenu();
       }
       else if (currentMenuState == MENU_FACES) {
-        if (menuCursor >= 0 && menuCursor < ORIGINAL_FACES_COUNT) {
-          currentMode = ORIGINAL_FACES[menuCursor].id;
-          frameIdx = 0;
+        uint8_t totalInMenu = ORIGINAL_FACES_COUNT + (hasCustomBitmap ? 1 : 0) + 2;
+
+        if (hasCustomBitmap && menuCursor == 0) {
+          currentMode = "custom";
           currentMenuState = STATE_NORMAL;
-        } else if (menuCursor == 8) {
-          // Keep as Default
-          saveDefaultFace(currentMode);
-          renderMenu();
         } else {
-          currentMenuState = MENU_MAIN;
-          menuCursor = 0; menuScroll = 0;
-          renderMenu();
+          int8_t faceIdx = menuCursor - (hasCustomBitmap ? 1 : 0);
+          if (faceIdx >= 0 && faceIdx < ORIGINAL_FACES_COUNT) {
+            currentMode = ORIGINAL_FACES[faceIdx].id;
+            frameIdx = 0;
+            currentMenuState = STATE_NORMAL;
+          } else if (menuCursor == totalInMenu - 2) {
+            // Keep as Default
+            saveDefaultFace(currentMode);
+            renderMenu();
+          } else {
+            currentMenuState = MENU_MAIN;
+            menuCursor = 0; menuScroll = 0;
+            renderMenu();
+          }
         }
       }
       else if (currentMenuState == MENU_EXPRESSIONS) {
@@ -1217,6 +1391,21 @@ void handleSerial() {
       frameIdx = 0;
       Serial.println(F("OK:MODE_SET"));
     }
+    else if (line.startsWith("bitmap:")) {
+      String hexStr = line.substring(7);
+      if (hexStr.length() >= 2048) {
+        for (int i = 0; i < 1024; i++) {
+          char byteChars[3] = { hexStr[i * 2], hexStr[i * 2 + 1], ' ' };
+          customBitmap[i] = (uint8_t) strtol(byteChars, NULL, 16);
+        }
+        hasCustomBitmap = true;
+        currentMode = "custom";
+        saveCustomBitmap();
+        Serial.println(F("OK:BITMAP_LOADED"));
+      } else {
+        Serial.println(F("ERR:NEED_2048_HEX"));
+      }
+    }
     else if (line.startsWith("default:") || line.startsWith("setdefault:")) {
       String param = line.substring(line.indexOf(':') + 1);
       saveDefaultFace(param);
@@ -1302,6 +1491,58 @@ void setDefaultRoute() {
   server.send(200, "application/json", R"({"ok":true,"default":")" + defaultFace + R"("})");
 }
 
+void uploadBitmapRoute() {
+  if (!server.hasArg("plain")) {
+    server.send(400, "text/plain", "Missing body");
+    return;
+  }
+  String body = server.arg("plain");
+  body.trim();
+
+  // If plain hex string (2048 chars)
+  if (body.length() >= 2048 && body.indexOf("0x") == -1) {
+    for (int i = 0; i < 1024; i++) {
+      char byteChars[3] = { body[i * 2], body[i * 2 + 1], ' ' };
+      customBitmap[i] = (uint8_t) strtol(byteChars, NULL, 16);
+    }
+    hasCustomBitmap = true;
+    currentMode = "custom";
+    saveCustomBitmap();
+    lastActivityTime = millis();
+    if (isSleeping) wakeUp();
+    server.send(200, "text/plain", "Custom Face Loaded on OLED!");
+    return;
+  }
+
+  // Else parse 0x.. from .ino code directly
+  int byteIdx = 0;
+  int searchPos = 0;
+  while (byteIdx < 1024 && searchPos < body.length()) {
+    int pos = body.indexOf("0x", searchPos);
+    if (pos == -1) pos = body.indexOf("0X", searchPos);
+    if (pos == -1) break;
+    String hexByte = body.substring(pos + 2, pos + 4);
+    customBitmap[byteIdx++] = (uint8_t) strtol(hexByte.c_str(), NULL, 16);
+    searchPos = pos + 2;
+  }
+
+  if (byteIdx == 1024) {
+    int ffCount = 0;
+    for (int i = 0; i < 1024; i++) if (customBitmap[i] == 0xFF) ffCount++;
+    if (ffCount > 400) {
+      for (int i = 0; i < 1024; i++) customBitmap[i] = ~customBitmap[i];
+    }
+    hasCustomBitmap = true;
+    currentMode = "custom";
+    saveCustomBitmap();
+    lastActivityTime = millis();
+    if (isSleeping) wakeUp();
+    server.send(200, "text/plain", "Custom Face Loaded on OLED!");
+  } else {
+    server.send(400, "text/plain", "Need 1024 bytes (found " + String(byteIdx) + ")");
+  }
+}
+
 void messageRoute() {
   if (server.hasArg("text")) {
     currentMessage = server.arg("text");
@@ -1343,6 +1584,7 @@ void setupWiFi() {
   server.on("/api/status", sendStatus);
   server.on("/api/mode", modeRoute);
   server.on("/api/setdefault", setDefaultRoute);
+  server.on("/api/upload_bitmap", HTTP_POST, uploadBitmapRoute);
   server.on("/api/message", messageRoute);
   server.begin();
   Serial.println(F("[WiFi] HTTP WebServer started on port 80."));
@@ -1359,8 +1601,13 @@ void setup() {
   Serial.println(F("🐾 CottonKitty & Little Reminder Unified FW 🐾"));
   Serial.println(F("============================================"));
 
-  // Load Saved Default Face from Flash NVS
+  // Load Saved Preferences from Flash NVS
   preferences.begin("kitty", false);
+  hasCustomBitmap = preferences.getBool("hasCustom", false);
+  if (hasCustomBitmap) {
+    preferences.getBytes("customBmp", customBitmap, 1024);
+    Serial.println(F("[Preferences] Loaded saved custom face from Flash NVS."));
+  }
   defaultFace = preferences.getString("default", "gallery_heartface");
   preferences.end();
   currentMode = defaultFace;
