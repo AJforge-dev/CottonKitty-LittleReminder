@@ -41,6 +41,21 @@
 #define OLED_RESET     -1
 #define OLED_ADDR      0x3C
 
+// ==========================================
+// 📶 WI-FI NETWORK CONFIGURATION
+// ==========================================
+// 1. Device Hotspot (Default)
+#define AP_SSID        "LittleReminder"
+#define AP_PASS        "love1234"
+
+// 2. Or connect to your Home Wi-Fi / Phone Hotspot:
+// (Put your Wi-Fi name & password here if you want it to join your home network.
+//  Leave empty "" to use the LittleReminder hotspot!)
+const char* HOME_WIFI_SSID = "";   // e.g. "MyHomeWiFi"
+const char* HOME_WIFI_PASS = "";   // e.g. "myPassword"
+
+String wifiIP = "192.168.4.1";
+
 Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, OLED_RESET);
 WebServer server(80);
 
@@ -49,7 +64,7 @@ WebServer server(80);
 // ==========================================
 bool autoSleepEnabled = true;
 uint32_t sleepTimeoutMs = 45000;  // 45 seconds idle -> sleep
-bool wifiEnabled = false;         // OFF by default for maximum battery!
+bool wifiEnabled = true;          // ✅ AUTO-START WI-FI ON BOOT!
 bool doubleTapEnabled = true;
 
 bool isSleeping = false;
@@ -575,9 +590,33 @@ void wakeUp() {
 
 void updateWiFiState() {
   if (wifiEnabled) {
-    Serial.println(F("[WiFi] Starting AP: LittleReminder (192.168.4.1)..."));
-    WiFi.mode(WIFI_AP);
-    WiFi.softAP("LittleReminder", "love1234");
+    if (strlen(HOME_WIFI_SSID) > 0) {
+      Serial.print(F("[WiFi] Connecting to Home Wi-Fi: "));
+      Serial.println(HOME_WIFI_SSID);
+      WiFi.mode(WIFI_STA);
+      WiFi.begin(HOME_WIFI_SSID, HOME_WIFI_PASS);
+      int retry = 0;
+      while (WiFi.status() != WL_CONNECTED && retry < 15) {
+        delay(300);
+        Serial.print(F("."));
+        retry++;
+      }
+      if (WiFi.status() == WL_CONNECTED) {
+        wifiIP = WiFi.localIP().toString();
+        Serial.print(F("\n[WiFi] Connected to Home Wi-Fi! IP: "));
+        Serial.println(wifiIP);
+      } else {
+        Serial.println(F("\n[WiFi] Home Wi-Fi failed. Falling back to Hotspot AP..."));
+        WiFi.mode(WIFI_AP);
+        WiFi.softAP(AP_SSID, AP_PASS);
+        wifiIP = WiFi.softAPIP().toString();
+      }
+    } else {
+      Serial.println(F("[WiFi] Starting Hotspot AP: LittleReminder (192.168.4.1)..."));
+      WiFi.mode(WIFI_AP);
+      WiFi.softAP(AP_SSID, AP_PASS);
+      wifiIP = WiFi.softAPIP().toString();
+    }
 
     // 1. Mobile Web App Dashboard
     server.on("/", []() {
@@ -944,7 +983,25 @@ void setup() {
   display.setCursor(24, 50);
   display.print(F("Battery Pet v2"));
   display.display();
-  delay(1200);
+  delay(1000);
+
+  // Start Wi-Fi and show connection details on OLED
+  if (wifiEnabled) {
+    updateWiFiState();
+
+    display.clearDisplay();
+    drawHeart(64, 12, 10, true);
+    display.setTextSize(1);
+    display.setTextColor(SSD1306_WHITE);
+    display.setCursor(24, 28);
+    display.print(F("Wi-Fi Ready!"));
+    display.setCursor(6, 42);
+    display.print(strlen(HOME_WIFI_SSID) > 0 ? "Net: " + String(HOME_WIFI_SSID) : "Wi-Fi: LittleReminder");
+    display.setCursor(6, 54);
+    display.print("http://" + wifiIP);
+    display.display();
+    delay(2200);
+  }
 
   lastActivityMillis = millis();
   renderCurrent();
