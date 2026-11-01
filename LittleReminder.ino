@@ -954,6 +954,70 @@ void handleTouchGestures() {
   }
 }
 
+// ==========================================
+// 🔌 USB-C OTG SERIAL COMMAND HANDLER
+// ==========================================
+void handleSerialCommand(String cmd) {
+  cmd.trim();
+  if (cmd.length() == 0) return;
+  lastActivityMillis = millis();
+  if (isSleeping) wakeUp();
+
+  if (cmd.startsWith("face:")) {
+    String arg = cmd.substring(5);
+    arg.trim();
+    int idx = arg.toInt();
+    if (idx >= 0 && idx < 10) {
+      currentFaceIndex = idx;
+      currentMode = MODE_FACE;
+      renderCurrent();
+      Serial.println(F("OK:FACE_SET"));
+    }
+  } else if (cmd.startsWith("msg:")) {
+    currentMessageText = cmd.substring(4);
+    currentMode = MODE_MESSAGE;
+    renderCurrent();
+    Serial.println(F("OK:MSG_SET"));
+  } else if (cmd == "pat" || cmd == "react") {
+    triggerReaction(false);
+    Serial.println(F("OK:PAT"));
+  } else if (cmd == "doubletap" || cmd == "love") {
+    triggerReaction(true);
+    Serial.println(F("OK:DOUBLETAP"));
+  } else if (cmd.startsWith("bitmap:")) {
+    String hexData = cmd.substring(7);
+    int byteIdx = 0;
+    int searchPos = 0;
+    while (byteIdx < 1024) {
+      int hexStart = hexData.indexOf("0x", searchPos);
+      if (hexStart == -1) hexStart = hexData.indexOf("0X", searchPos);
+      if (hexStart == -1) break;
+      String byteStr = hexData.substring(hexStart, hexStart + 4);
+      customBitmap[byteIdx++] = (uint8_t)strtol(byteStr.c_str(), NULL, 16);
+      searchPos = hexStart + 2;
+    }
+    if (byteIdx == 1024) {
+      int ffCount = 0;
+      for (int i = 0; i < 1024; i++) if (customBitmap[i] == 0xFF) ffCount++;
+      if (ffCount > 400) {
+        for (int i = 0; i < 1024; i++) customBitmap[i] = ~customBitmap[i];
+      }
+      hasCustomBitmap = true;
+      currentFaceIndex = 10;
+      currentMode = MODE_FACE;
+      renderCurrent();
+      Serial.println(F("OK:BITMAP_LOADED"));
+    } else {
+      Serial.println(F("ERR:NEED_1024_BYTES"));
+    }
+  } else if (cmd == "status") {
+    Serial.print(F("STATUS:face="));
+    Serial.print(currentFaceIndex);
+    Serial.print(F(",wifi="));
+    Serial.println(wifiEnabled ? "on" : "off");
+  }
+}
+
 void renderCurrent() {
   display.clearDisplay();
   if (currentMode == MODE_FACE) {
@@ -1023,7 +1087,13 @@ void setup() {
 void loop() {
   uint32_t now = millis();
 
-  // 1. Handle hardware input
+  // 1. Handle USB-C OTG Cable Serial Commands
+  if (Serial.available()) {
+    String cmd = Serial.readStringUntil('\n');
+    handleSerialCommand(cmd);
+  }
+
+  // 2. Handle hardware buttons & touch sensor
   handleButtons();
   handleTouchGestures();
 
