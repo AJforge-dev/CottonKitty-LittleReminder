@@ -95,13 +95,14 @@ const FaceEntry ORIGINAL_FACES[] = {
   {"gallery_heartface",   "Heart-Eyes (28F)"},
   {"gallery_sadface",     "Sad Face (10F)"},
   {"gallery_catwalk",     "Walking Cat (28F)"},
+  {"gallery_cozycat",     "Cozy Cat"},
   {"gallery_catmouse",    "Cat & Mouse"},
   {"gallery_dove",        "Dove with Flower"},
   {"gallery_rainygirl",   "Rainy Girl"},
   {"gallery_couple",      "Couple High-Five"},
   {"gallery_girlportrait", "Girl Portrait"}
 };
-const uint8_t ORIGINAL_FACES_COUNT = 8;
+const uint8_t ORIGINAL_FACES_COUNT = 9;
 
 // Procedural Kaomoji Expressions:
 const FaceEntry EXPRESSIONS[] = {
@@ -135,14 +136,14 @@ const uint8_t EXPRESSIONS_COUNT = 25;
 
 // Combined cycling list
 const char* ALL_MODES[] = {
-  "gallery_heartface", "gallery_sadface", "gallery_catwalk", "gallery_catmouse",
+  "gallery_heartface", "gallery_sadface", "gallery_catwalk", "gallery_cozycat", "gallery_catmouse",
   "gallery_dove", "gallery_rainygirl", "gallery_couple", "gallery_girlportrait",
   "happy", "love", "shy", "sleep", "laugh", "cry", "angry", "surprise",
   "wink", "cool", "sad", "blush", "excited", "dance", "thinking", "confused",
   "ghost", "bunny", "star", "heart", "sleepy", "proud", "oops", "relaxed",
   "sparkle", "tiny", "robot", "kiss", "pout", "party", "floating", "calm"
 };
-const uint8_t TOTAL_MODES = 40;
+const uint8_t TOTAL_MODES = 41;
 
 String currentMode = "gallery_heartface";
 String defaultFace = "gallery_heartface";
@@ -411,6 +412,7 @@ const galleryItems = [
   ['gallery_heartface','♡','Heart-Eyes Face · 28F'],
   ['gallery_sadface','☹','Sad Face · 10F'],
   ['gallery_catwalk','🐈','Walking Cat · 28F'],
+  ['gallery_cozycat','🐾','Cozy Cat · resting'],
   ['gallery_catmouse','🐱','Cat & Mouse cuddle'],
   ['gallery_dove','🕊️','Dove with flower'],
   ['gallery_rainygirl','☂','Girl with umbrella'],
@@ -858,6 +860,9 @@ void drawMode() {
     } else if (currentMode == "gallery_catwalk") {
       selectedFrames = catwalkFrames;
       selectedCount = catwalkCount;
+    } else if (currentMode == "gallery_cozycat") {
+      selectedFrames = cozycatFrames;
+      selectedCount = cozycatCount;
     } else if (currentMode == "gallery_catmouse") {
       selectedFrames = catmouseFrames;
       selectedCount = catmouseCount;
@@ -1039,7 +1044,7 @@ void renderMenu() {
   else if (currentMenuState == MENU_FACES) {
     display.print(F("=== FACES ==="));
     uint8_t count = ORIGINAL_FACES_COUNT + (hasCustomBitmap ? 1 : 0) + 2;
-    String items[12];
+    String items[14];
     uint8_t ptr = 0;
 
     if (hasCustomBitmap) {
